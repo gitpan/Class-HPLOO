@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.19';
+$VERSION = '0.20';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -781,7 +781,7 @@ sub parse_class {
 
     my @ret = extract_block($data) ;
     
-    if (@ret[0] ne '') {
+    if ($ret[0] ne '') {
       $class .= $ret[0] ;
       $data = $ret[1] ;
       $init =~ s/[ \t]+$//s ;
@@ -853,7 +853,6 @@ sub clean_comments {
 
 sub build_class {
   my $code = shift ;
-  my $class ;
   
   my ($name,$version,$extends,$body) = ( $code =~ /
     class\s+
@@ -1099,7 +1098,7 @@ sub parse_subs {
     
     my @ret = extract_block($data) ;
     
-    if (@ret[0] ne '') {
+    if ($ret[0] ne '') {
       $sub .= $ret[0] ;
       $data = $ret[1] ;
       $sub = build_sub($sub,\%inline) ;
@@ -1317,7 +1316,7 @@ sub build_hploo {
   
   $code =~ s/\r\n?/\n/gs ;
   
-  open (my $fh,">$pm_file") ;
+  open ($fh,">$pm_file") ;
   print $fh $code ;
   close ($fh) ;
   
