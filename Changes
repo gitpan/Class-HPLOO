@@ -1,6 +1,13 @@
 Revision history for Perl extension Class::HPLOO.
 
 
+0.18  2004-12-12
+      - Fixed some new() recursion bug.
+      - Fixed push() of atributes of type array*.
+      - FETCH of attributes of type array* and hash* will be set as changed like on STORE.
+      - Added inline functions syntax:  sub[C] void foo( int x ) {...}
+
+
 0.17  2004-10-16
       - Added method ATTRS that returns the list of attributes in the declaration order.
       - Added support for object atributes.

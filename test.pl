@@ -1,7 +1,7 @@
 #########################
 
 use Test ;
-BEGIN { plan tests => 32 } ;
+BEGIN { plan tests => 42 } ;
 
 #########################
 {
@@ -11,7 +11,7 @@ BEGIN { plan tests => 32 } ;
   my $foo = new Foo(123) ;
   ok($foo) ;
   
-  ok( join(' ',@Foo::ISA) , "Bar Baz UNIVERSAL") ;
+  ok( join(' ',@Foo::ISA) , "Bar Baz Class::HPLOO::Base UNIVERSAL") ;
   
   $foo->test_arg(456) ;
   ok( $foo->{arg1} , 456 ) ;
@@ -101,5 +101,31 @@ BEGIN { plan tests => 32 } ;
   ok($call0 , $call1) ;
 }
 #########################
+{
+
+  eval { require "test/testsuper.pm" } ;
+  ok(!$@) ;
+  
+  print "$@\n" if $@ ;
+  
+  my $t = new TestSuper() ;
+  
+  ok($t , $t->{2}) ;
+  ok($t->{2} , $t->{3}) ;
+  ok($t->{id} , 1);
+  
+  ok($t != $t->{n2}) ;
+  ok($t->{n2}->{id} , 3);
+  
+  ok($t->{n2} != $t->{n3}) ;
+  ok($t->{n3}->{id} , 2);
+  
+  ok($t->{n2}->{n3}->{id} , 4);
+  
+  ok($TestSuper3::id , 4) ;
+  
+}
+#########################
 
 print "By!\n" ;
+

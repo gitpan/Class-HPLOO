@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.17';
+$VERSION = '0.18';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -40,13 +40,112 @@ if (!$LOADED) {
   
   my $CLASS_EXTRAS = q`
     sub SUPER {
-      my ($pack , undef , undef , $sub0) = caller(1) ;
-      unshift(@_ , $pack) if ( (!ref($_[0]) && $_[0] ne $pack) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $pack)) ) ;
-      my $sub = $sub0 ;
-      $sub =~ s/.*?(\w+)$/$1/ ;
-      $sub = 'new' if $sub0 =~ /(?:^|::)$sub\::$sub$/ ;
-      $sub = "SUPER::$sub" ;
-      $_[0]->$sub(@_[1..$#_]) ;
+      eval('package Class::HPLOO::Base ;') if !defined *{'Class::HPLOO::Base::'} ;
+      
+      my ($prev_pack , undef , undef , $sub0) = caller(1) ;
+      $prev_pack = undef if $prev_pack eq 'Class::HPLOO::Base' ;
+      
+      my ($pack,$sub) = ( $sub0 =~ /^(?:(.*?)::|)(\w+)$/ );
+      my $sub_is_new_hploo = $sub0 =~ /^(.*?(?:::)?$sub)\::$sub$/ ? 1 : undef ;
+    
+      unshift(@_ , $prev_pack) if ( $sub_is_new_hploo && $prev_pack && ((!ref($_[0]) && $_[0] ne $prev_pack && !UNIVERSAL::isa($_[0] , $prev_pack)) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $prev_pack)) ) ) ;
+    
+      if ( defined @{"$pack\::ISA"} ) {
+        my $isa_sub = ISA_FIND_NEW($pack, ($sub_is_new_hploo?'new':$sub) ,1) ;
+        my ($sub_name) = ( $isa_sub =~ /(\w+)$/gi );
+        if ( $sub0 ne $isa_sub && !ref($_[0]) && $isa_sub =~ /^(.*?(?:::)?$sub_name)\::$sub_name$/ ) {
+          @_ = ( bless({},$_[0]) , @_[1..$#_] ) ;
+        }
+        if ( $sub0 eq $isa_sub && UNIVERSAL::isa($_[0] , $pack) ) {
+          my @isa = Class::HPLOO::Base::FIND_SUPER_WALK( ref($_[0]) , $pack ) ;
+          my $pk = $isa[-1] ;
+          if ( $sub_is_new_hploo ) {
+            if ( UNIVERSAL::isa($pk , 'Class::HPLOO::Base') ) {
+              ($sub) = ( $pk =~ /(\w+)$/gi );        
+            }
+            else { $sub = 'new' ;}
+          }
+          my $isa_sub = $pk->can($sub) ;
+          return &$isa_sub( ARGS_WRAPPER(@_) ) if $isa_sub ;
+        }
+        return &$isa_sub(@_) if $isa_sub && defined &$isa_sub && $sub0 ne $isa_sub ;
+      }
+      $sub = $sub_is_new_hploo ? 'new' : $sub ;
+      die("Can't find SUPER method for $sub0!") if "$pack\::$sub" eq $sub0 ;
+      return &{"$pack\::$sub"}(@_) ;
+    }
+  
+    sub FIND_SUPER_WALK {
+      my $class_main = shift ;
+      my $class_end = shift ;
+      my $only_stak = shift ;
+      
+      my (@stack) ;
+      my $stack = $only_stak || {} ;
+      
+      my $found ;
+      foreach my $isa_i ( @{"$class_main\::ISA"} ) {
+        next if $$stack{$isa_i}++ ;
+        $found = 1 if $isa_i eq $class_end ;
+        push(@stack , $isa_i , FIND_SUPER_WALK($isa_i , $class_end , $stack) );
+      }
+      
+      return ($found ? @stack : ()) if $only_stak ;
+      return @stack ;
+    }
+    
+    sub ISA_FIND_NEW {
+      my $pack = shift ;
+      my $sub = shift ;
+      my $look_deep = shift ;
+      my $count = shift ;
+      return if $count > 100 ;
+        
+      my ($sub_name) ;
+      if ( UNIVERSAL::isa($pack , 'Class::HPLOO::Base') ) {
+        ($sub_name) = $sub eq 'new' ? ( $pack =~ /(\w+)$/ ) : ($sub) ;
+      }
+      else { $sub_name = $sub ;}
+      
+      my $isa_sub = "$pack\::$sub_name" ;
+      
+      if ( $look_deep || !defined &$isa_sub ) {
+        foreach my $isa_i ( @{"$pack\::ISA"} ) {
+          next if $isa_i eq $pack || $isa_i eq 'Class::HPLOO::Base' ;
+          last if $isa_i eq 'UNIVERSAL' ;
+          $isa_sub = ISA_FIND_NEW($isa_i , $sub , 0 , $count+1) ;
+          last if $isa_sub ;
+        }
+      }
+      
+      $isa_sub = undef if !defined &$isa_sub ; 
+      return $isa_sub ;
+    }
+    
+    sub new_call_BEGIN {
+      my $class = shift ;
+      my $this = $class ;
+      foreach my $ISA_i ( @ISA ) {
+        last if $ISA_i eq 'Class::HPLOO::Base' ;
+        my $ret ;
+        my ($sub) = ( $ISA_i =~ /(\w+)$/ );
+        $sub = "$ISA_i\::$sub\_BEGIN" ;
+        $ret = &$sub($this,@_) if defined &$sub ;
+        $this = $ret if UNIVERSAL::isa($ret,$class) ;
+      }
+      return $this ;
+    }
+    
+    sub new_call_END {
+      my $class = shift ;
+      foreach my $ISA_i ( @ISA ) {
+        last if $ISA_i eq 'Class::HPLOO::Base' ;
+        my $ret ;
+        my ($sub) = ( $ISA_i =~ /(\w+)$/ );
+        $sub = "$ISA_i\::$sub\_END" ;
+        &$sub(@_) if defined &$sub ;
+      }
+      return ;
     }
   `;
   
@@ -58,9 +157,10 @@ if (!$LOADED) {
         }
       }
 
-      my $class = shift ;
-            
-      my $this = bless({} , $class) ;
+      my $class = shift ; $class = ref($class) if ref($class) ;
+      
+      my $this = new_call_BEGIN($class , @_) ;
+      $this = bless({} , $class) if !ref($this) || !UNIVERSAL::isa($this,$class) ;
       
       no warnings ;
       
@@ -71,6 +171,8 @@ if (!$LOADED) {
       
       if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) { $this = $ret_this }
       elsif ( $ret_this == $undef ) { $this = undef }
+      
+      new_call_END($class,$this,@_) ;
 
       return $this ;
     }
@@ -87,8 +189,10 @@ if (!$LOADED) {
         }
       }
 
-      my $class = shift ;
-      my $this = bless({} , $class) ;
+      my $class = shift ; $class = ref($class) if ref($class) ;
+      
+      my $this = new_call_BEGIN($class , @_) ;
+      $this = bless({} , $class) if !ref($this) || !UNIVERSAL::isa($this,$class) ;
       
       no warnings ;
       
@@ -104,6 +208,8 @@ if (!$LOADED) {
         if ( $CLASS_HPLOO{ATTR} && UNIVERSAL::isa($this,'HASH') ) { CLASS_HPLOO_TIE_KEYS($this) }
       }
       elsif ( $ret_this == $undef ) { $this = undef }
+      
+      new_call_END($this,@_) ;
 
       return $this ;
     }
@@ -130,9 +236,11 @@ if (!$LOADED) {
   ` ;  
   
   $SUB_ALL_OO = q`
-    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : undef ;
+    my $this = ref($_[0]) ? shift : undef ;
     my $CLASS = ref($this) || __PACKAGE__ ;
   ` ;
+  
+  ## my $this = ref($_[0]) && UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : undef ;
   
   $SUB_HTML_EVAL = q~
   sub CLASS_HPLOO_HTML {
@@ -259,8 +367,14 @@ if (!$LOADED) {
         if ( ref $$ref_changed ne 'HASH' ) { $$ref_changed = {} }
         $$ref_changed->{$this->{nm}} = 1 ;
       }
-
-      $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $this->{tp} , @_) ;
+      
+      if ( $this->{pr} ) {
+        my $tp = $this->{tp} =~ /^ref/ ? $this->{tp} : 'ref' . $this->{tp} ;
+        $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $tp , @_) ;
+      }
+      else {
+        $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $this->{tp} , @_) ;  
+      }
     }
     
     sub FETCH {
@@ -273,10 +387,18 @@ if (!$LOADED) {
         my $obj = $$CLASS_HPLOO{OBJ_TBL}{ $this->{oid} } ;
         return (&$sub($obj,@_))[0] if defined &$sub ;
       }
-      else { return $$ref ;}
+      else {
+        if ( $this->{tp} =~ /^(?:ref)?(?:array|hash)/ ) {
+          my $ref_changed = $this->{rfcg} ;
+          if ( $ref_changed ) {
+            if ( ref $$ref_changed ne 'HASH' ) { $$ref_changed = {} }
+            $$ref_changed->{$this->{nm}} = 1 ;
+          }
+        }
+        return $$ref ;
+      }
       return undef ;
-    }
-    
+    }    
     sub UNTIE {}
     sub DESTROY {}
   }
@@ -348,7 +470,6 @@ if (!$LOADED) {
       else {
         return [map { CLASS_HPLOO_ATTR_TYPE($class , $tp , $_) || () } @val] ;
       }
-
     }
     elsif ($type =~ /^hash(&?[\w:]+)/ ) {
       my $tp = $1 ;
@@ -361,12 +482,16 @@ if (!$LOADED) {
     elsif ($type =~ /^refarray(&?[\w:]+)/ ) {
       my $tp = $1 ;
       return undef if ref($_[0]) ne 'ARRAY' ;
-      return CLASS_HPLOO_ATTR_TYPE($class , "array$tp" , @{$_[0]}) ;
+      my $ref = CLASS_HPLOO_ATTR_TYPE($class , "array$tp" , @{$_[0]}) ;
+      @{$_[0]} = @{$ref} ;
+      return $_[0] ;
     }
     elsif ($type =~ /^refhash(&?[\w:]+)/ ) {
       my $tp = $1 ;
       return undef if ref($_[0]) ne 'HASH' ;
-      return CLASS_HPLOO_ATTR_TYPE($class , "hash$tp" , %{$_[0]}) ;
+      my $ref = CLASS_HPLOO_ATTR_TYPE($class , "hash$tp" , %{$_[0]}) ;
+      %{$_[0]} = %{$ref} ;
+      return $_[0] ;
     }
     elsif ($type =~ /^\w+(?:::\w+)*$/ ) {
       return( UNIVERSAL::isa($_[0] , $type) ? $_[0] : undef ) ;
@@ -399,7 +524,7 @@ sub import {
 
   my $args = join(" ", @_) ;
   
-  if ( $args =~ /use[_\s]*base/i) { $USE_BASE = 1 ;}
+  if ( $args =~ /(?:use)?[_\s]*base/i) { $USE_BASE = 1 ;}
   
   if ( $args =~ /build/i) { $args =~ s/(?:build|dump|nice)//gsi ; $BUILD = 1 ; $NICE = 1 ;}
   elsif    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ; $NICE = 1 ;}
@@ -444,7 +569,7 @@ sub dump_code {
     my $syntax = $_ ;
     $syntax =~ s/\r\n?/\n/gs ;
     print "$syntax\n" ;
-    exit;
+    exit ;
   }
   
   if ( $BUILD ) {
@@ -487,13 +612,17 @@ sub filter_html_blocks {
   my $set_init_line = !$BUILD ? "\n#line $line_init\n" : undef ;
   my $data = $CACHE{_} = $set_init_line . clean_comments("\n".$_) ;
   
-  $data =~ s/(\{\s*)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*\})/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## {s}
-  $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*=>)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## s =>
-  $data =~ s/(->)((?:q|qq|qr|qw|qx|tr|y|s|m)\W)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## ->s
+  for(1..2) {
+    $data =~ s/(\{\s*)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\s*\})/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## {s}
+    $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\s*=>)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## s =>
+    $data =~ s/(->)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\W)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## ->s
   
-  $data =~ s/([\$\@\%\*])((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## $q
-  $data =~ s/(-s)(\s+\S|[^\w\s])/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## -s foo
-  $data =~ s/(\Wsub\s+)((?:q|qq|qr|qw|qx|tr|y|s|m)[\s\(\{])/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## sub m {}
+    $data =~ s/([\$\@\%\*])((?:q|qq|qr|qw|qx|tr|x|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## $q
+    $data =~ s/(-[sx])(\s+\S|[^\w\s])/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## -s foo
+    $data =~ s/(\Wsub\s+)((?:q|qq|qr|qw|qx|tr|x|y|s|m)[\s\(\{])/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## sub m {}
+  
+    $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\W)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## txt y = | (x-y)
+  }
   
   $data = _fix_div($data) ;
   
@@ -760,7 +889,7 @@ sub build_class {
     $extends_i = package_name($extends_i);
   }
   
-  my $isa_base = $USE_BASE ? 'Class::HPLOO::Base UNIVERSAL' : 'UNIVERSAL' ;
+  my $isa_base = 'Class::HPLOO::Base UNIVERSAL' ;
   
   if ( @extends ) {
     $extends = "push(\@ISA , qw(". join(' ',@extends) ." $isa_base)) ;" ;
@@ -943,9 +1072,22 @@ sub parse_subs {
   my $data = shift ;
   my $syntax ;
   
-  my ( $init , $sub ) ;
+  my ( $init , $sub , %inline ) ;
   
-  while( $data =~ /^(.*?\W|)(sub\s+[\w\.:]+\s*(?:\(.*?\)|)?)\s*(\{.*)$/gs ) {
+  $data =~ s/\n__\[(\w+)\]__[ \t]*\n(.*?)\n__\[\1\]__[ \t]*\n/\nsub[$1] __INLINE_CODE__ {\n$2\n}\n/gs ;
+  
+  while( $data =~ /^
+    (.*?\W|)
+    (
+      sub\s+[\w\.:]+\s*
+      (?:\(.*?\)|)?
+    |
+      sub\[\w+\].*?
+    )
+    \s*
+    (\{.*)
+  
+  $/gsx ) {
     $init = $1 ;
     $sub = $2 ;
     $data = $3 ;
@@ -960,12 +1102,20 @@ sub parse_subs {
     if (@ret[0] ne '') {
       $sub .= $ret[0] ;
       $data = $ret[1] ;
-      $sub = build_sub($sub) ;
+      $sub = build_sub($sub,\%inline) ;
     }
     $syntax .= $init . $sub ;
   }
   
   $syntax .= $data ;
+  
+  foreach my $Key ( sort keys %inline ) {
+    my $src = "use Inline $Key => <<'__INLINE_$Key\_SRC__';\n\n" ;
+    $src .= $inline{$Key} ;
+    $src =~ s/\s+$/\n/s ;
+    $src .= "\n__INLINE_$Key\_SRC__\n\n" ;
+    $syntax .= $src ;
+  }
 
   return $syntax ;
 }
@@ -976,31 +1126,48 @@ sub parse_subs {
 
 sub build_sub {
   my $code = shift ;
+  my $inline = shift ;
   my $sub ;
   
   $code =~ s/\r\n?/\n/gs ;
   
-  my ($name,$prototype,$body) = ( $code =~ /sub\s+([\w\.:]+)\s*((?:\(.*?\))?)\s*{(.*)/s );
-  $body =~ s/}\s*$//s ;
-  
-  $name = package_name($name);
-  
-  my $my_args ;
-  if ( $prototype ) {
-    $my_args = &generate_args_code($prototype) ;
-    if ( $my_args ) { $prototype = '' ;}
-    else { $prototype =~ s/^(\()(.*)$/$1\$$2/gs ;}
-  }
+  if ( $code =~ /^\s*sub\[\w+\]/ ) {
+    my ($language,$header,$body) = ( $code =~ /^\s*sub\[(\w+)\]\s*(.*?)\s*{(.*)/s );
+    $language = uc($language) ;
     
-  my $my_code = $SUB_OO . $my_args ;
-  
-  if ( $NICE || $BUILD ) {
-    my ($n,$ident) = ( $body =~ /(\r\n?|\n)([ \t]+)/s );
-    $my_code =~ s/(\s*;)\s*/$1$n$ident/gs ;
-    $my_code =~ s/^(\s*)/$1$n$ident/gs ;
+    if ( $header eq '__INLINE_CODE__' ) {
+      $body =~ s/[ \t]*}\s*$/\n/s ;
+      $$inline{$language} .= $body ;
+    }
+    else {
+      my $src = "$header {$body" ;
+      $src =~ s/[ \t]*}\s*$/}\n\n/s ;
+      $$inline{$language} .= $src ;
+    }
   }
-  
-  $sub = "sub $name$prototype {$my_code$body}" ;
+  else {
+    my ($name,$prototype,$body) = ( $code =~ /sub\s+([\w\.:]+)\s*((?:\(.*?\))?)\s*{(.*)/s );
+    $body =~ s/}\s*$//s ;
+    
+    $name = package_name($name);
+    
+    my $my_args ;
+    if ( $prototype ) {
+      $my_args = &generate_args_code($prototype) ;
+      if ( $my_args ) { $prototype = '' ;}
+      else { $prototype =~ s/^(\()(.*)$/$1\$$2/gs ;}
+    }
+      
+    my $my_code = $SUB_OO . $my_args ;
+    
+    if ( $NICE || $BUILD ) {
+      my ($n,$ident) = ( $body =~ /(\r\n?|\n)([ \t]+)/s );
+      $my_code =~ s/(\s*;)\s*/$1$n$ident/gs ;
+      $my_code =~ s/^(\s*)/$1$n$ident/gs ;
+    }
+    
+    $sub = "sub $name$prototype {$my_code$body}" ;
+  }
   
   return $sub ;
 }
@@ -1266,6 +1433,67 @@ This is just a replacement of the original Perl syntax:
 
   use vars qw($VERSION) ;
   $VERSION = '0.01' ;
+
+=head1 SUBs
+
+The syntax for I<sub>s was extend to allow argument definitions:
+
+  Class Foo {
+    sub add( $x , $y ) {
+      return $x + $y ;
+    }
+  }
+
+Also you can define HASH and ARRAY arguments:
+
+  Class Foo {
+    sub add( \@list , $n , \%hash ) {
+      foreach my $list_i ( @list ) {
+        $list_i += $n ;
+      }
+    }
+  }
+
+This new syntax for arguments make much more easy to create functions and paste
+references for HASHes and ARRAYs.
+
+=head1 INLINE SUBs
+
+From version B<0.18> is possible to define inline functions directly in the class code:
+
+  class Foo {
+  
+    sub normal_perl_sub {
+      print "PERL SUB> @_\n" ;
+    }
+  
+    sub[C] int add( int x , int y ) {
+      int res = x + y ;
+      return res ;
+    }
+  
+  }
+
+The parser for the I<INLINE SUB>s is defined by:
+
+  sub[\w+].*?{...}
+       |   |   |
+       |   |   ---> body.
+       |   ---> sub/function/method header.
+       ---> language
+
+So, basically is possible to use any language that L<Inline> supports. Here's
+a I<Java> example:
+
+  class Foo {
+  
+    sub[Java] public void msg( String txt ) {
+      System.out.println(txt) ;
+    }
+  
+  }
+
+B<Enjoy! ;-P>
 
 =head1 ATTRIBUTES , GLOBAL VARS & LOCAL VARS
 
@@ -1649,7 +1877,7 @@ L<Perl6::Classes>, L<HPL>, L<HDB::Object>, L<HDB>.
 
 =head1 AUTHOR
 
-Graciliano M. P. <gm@virtuasites.com.br>
+Graciliano M. P. <gmpassos@cpan.org>
 
 I will appreciate any type of feedback (include your opinions and/or suggestions). ;-P
 

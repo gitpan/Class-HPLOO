@@ -15,7 +15,7 @@ WriteMakefile(
     'EXE_FILES'     => [ qw(script/build-hploo.pl) ],
     ($] >= 5.005 ?
       ( ABSTRACT_FROM => 'lib/Class/HPLOO.pm',
-        AUTHOR        => 'Graciliano M. P. <gm@virtuasites.com.br>'
+        AUTHOR        => 'Graciliano M. P. <gmpassos@cpan.org>'
        ) : ()
      ),
 );

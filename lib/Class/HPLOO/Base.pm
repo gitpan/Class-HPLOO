@@ -44,31 +44,199 @@ sub GET_CLASS_HPLOO_HASH {
 #########
 
 sub SUPER {
-  my ($pack , undef , undef , $sub0) = caller(1) ;
-  unshift(@_ , $pack) if ( (!ref($_[0]) && $_[0] ne $pack) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $pack)) ) ;
-  my $sub = $sub0 ;
-  $sub =~ s/.*?(\w+)$/$1/ ;
-  $sub = 'new' if $sub0 =~ /(?:^|::)$sub\::$sub$/ ;
-  $sub = "SUPER::$sub" ;
-  $_[0]->$sub(@_[1..$#_]) ;
+  my ($prev_pack , undef , undef , $sub0) = caller(1) ;
+  $prev_pack = undef if $prev_pack eq 'Class::HPLOO::Base' ;
+  
+  my ($pack,$sub) = ( $sub0 =~ /^(?:(.*?)::|)(\w+)$/ );
+
+  my $sub_is_new_hploo = $sub0 =~ /^(.*?(?:::)?$sub)\::$sub$/ ? 1 : undef ;
+  
+  ##print "SUPER[$sub_is_new_hploo]>> @_ >> $pack,$sub >> $prev_pack\n" ;
+
+  unshift(@_ , $prev_pack) if ( $sub_is_new_hploo && $prev_pack && ((!ref($_[0]) && $_[0] ne $prev_pack && !UNIVERSAL::isa($_[0] , $prev_pack)) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $prev_pack)) ) ) ;
+
+  if ( defined @{"$pack\::ISA"} ) {
+    my $isa_sub = ISA_FIND_NEW($pack, ($sub_is_new_hploo?'new':$sub) ,1) ;
+
+    my ($sub_name) = ( $isa_sub =~ /(\w+)$/gi );
+    if ( $sub0 ne $isa_sub && !ref($_[0]) && $isa_sub =~ /^(.*?(?:::)?$sub_name)\::$sub_name$/ ) {
+      @_ = ( bless({},$_[0]) , @_[1..$#_] ) ;
+    }
+    
+    if ( $sub0 eq $isa_sub && UNIVERSAL::isa($_[0] , $pack) ) {
+      my @isa = Class::HPLOO::Base::FIND_SUPER_WALK( ref($_[0]) , $pack ) ;
+      my $pk = $isa[-1] ;
+      if ( $sub_is_new_hploo ) {
+        if ( UNIVERSAL::isa($pk , 'Class::HPLOO::Base') ) {
+          ($sub) = ( $pk =~ /(\w+)$/gi );        
+        }
+        else { $sub = 'new' ;}
+      }
+      
+      my $isa_sub = $pk->can($sub) ;
+      ##print "SUPER WALK>> $pk , $sub >> $isa_sub\n" ;
+      return &$isa_sub( ARGS_WRAPPER(@_) ) if $isa_sub ;
+    }
+    
+    ##print "SUPER ISA>> $isa_sub >> $pack >> ". join(',',@{"$pack\::ISA"}) ."\n" ;
+    return &$isa_sub(@_) if $isa_sub && defined &$isa_sub && $sub0 ne $isa_sub ;
+  }
+  
+  $sub = $sub_is_new_hploo ? 'new' : $sub ;
+  ##print "SUPER CALL>> $pack $sub >> @_\n" ;
+
+  die("Can't find SUPER method for $sub0!") if "$pack\::$sub" eq $sub0 ;
+  
+  return &{"$pack\::$sub"}(@_) ;
+}
+
+###################
+# FIND_SUPER_WALK #
+###################
+
+sub FIND_SUPER_WALK {
+  my $class_main = shift ;
+  my $class_end = shift ;
+  my $only_stak = shift ;
+  
+  my (@stack) ;
+  my $stack = $only_stak || {} ;
+  
+  ##print "FIND>> $class_main , $class_end\n" ;
+  
+  my $found ;
+  foreach my $isa_i ( @{"$class_main\::ISA"} ) {
+    next if $$stack{$isa_i}++ ;
+    $found = 1 if $isa_i eq $class_end ;
+    push(@stack , $isa_i , FIND_SUPER_WALK($isa_i , $class_end , $stack) );
+  }
+  
+  return ($found ? @stack : ()) if $only_stak ;
+  return @stack ;
+}
+
+################
+# ISA_FIND_NEW #
+################
+
+sub ISA_FIND_NEW {
+  my $pack = shift ;
+  my $sub = shift ;
+  my $look_deep = shift ;
+  my $count = shift ;
+  return if $count > 100 ;
+  
+  ##print "ISA_FIND_NEW>> $pack >> $sub\n" ;
+    
+  my ($sub_name) ;
+  if ( UNIVERSAL::isa($pack , 'Class::HPLOO::Base') ) {
+    ($sub_name) = $sub eq 'new' ? ( $pack =~ /(\w+)$/ ) : ($sub) ;
+  }
+  else { $sub_name = $sub ;}
+  
+  my $isa_sub = "$pack\::$sub_name" ;
+  
+  if ( $look_deep || !defined &$isa_sub ) {
+    foreach my $isa_i ( @{"$pack\::ISA"} ) {
+      next if $isa_i eq $pack || $isa_i eq 'Class::HPLOO::Base' ;
+      last if $isa_i eq 'UNIVERSAL' ;
+      $isa_sub = ISA_FIND_NEW($isa_i , $sub , 0 , $count+1) ;
+      last if $isa_sub ;
+    }
+  }
+  
+  $isa_sub = undef if !defined &$isa_sub ; 
+  
+  ##print "%%> $pack >> $isa_sub\n" ;
+  return $isa_sub ;
+}
+
+##################
+# NEW_CALL_BEGIN #
+##################
+
+sub new_call_BEGIN {
+  my $class = shift ; $class = ref($class) if ref($class) ;
+  my $this = $class ;
+    
+  my @isas = \@{"$class\::ISA"} ;
+  
+  foreach my $isas_i ( @isas ) {
+    foreach my $ISA_i ( @$isas_i ) {
+      if ( defined @{"$ISA_i\::ISA"} && @{"$ISA_i\::ISA"} > 2 ) {
+        push(@isas , \@{"$ISA_i\::ISA"}) ;
+      }
+      last if $ISA_i eq 'Class::HPLOO::Base' ;
+      my $ret ;
+      my ($sub) = ( $ISA_i =~ /(\w+)$/ );
+      $sub = "$ISA_i\::$sub\_BEGIN" ;
+      $ret = &$sub($this,@_) if defined &$sub ;
+      $this = $ret if $ret && UNIVERSAL::isa($ret,$class) ;
+    }
+  }
+  
+  return $this ;
+}
+
+################
+# NEW_CALL_END #
+################
+
+sub new_call_END {
+  my $class = shift ; $class = ref($class) if ref($class) ;
+  
+  my @isas = \@{"$class\::ISA"} ;
+  
+  foreach my $isas_i ( @isas ) {
+    foreach my $ISA_i ( @$isas_i ) {
+      if ( defined @{"$ISA_i\::ISA"} && @{"$ISA_i\::ISA"} > 2 ) {
+        push(@isas , \@{"$ISA_i\::ISA"}) ;
+      }
+      last if $ISA_i eq 'Class::HPLOO::Base' ;
+      my ($sub) = ( $ISA_i =~ /(\w+)$/ );
+      $sub = "$ISA_i\::$sub\_END" ;
+      &$sub(@_) if defined &$sub ;
+    }
+  }
+  
+  return ;
 }
 
 #######
 # NEW #
 #######
 
+my $NEW_REF  = \&new ;
+
 sub new {
   my $class = shift ;
+  my $this = ref($class) ? $class : undef ;
+  
+  my $class_bless = $class ;
+  ($class,$class_bless,$this) = @$class if ref($class) eq 'ARRAY' ;
+
+  $class = ref($class) if ref($class) ;
+  $class_bless = ref($class_bless) if ref($class_bless) ;
+  
   my ($class_end) = ( $class =~ /(\w+)$/ );
+  
+  ##print "BASE NEW>> $class,$class_bless,$this >> $class_end >> @_ >> [". join(" ", @{"$class\::ISA"}) ."]\n" ;
   
   if ( !defined &{"$class\::$class_end"} && @{"$class\::ISA"} > 1 ) {
     foreach my $ISA_i ( @{"$class\::ISA"} ) {
-      next if $ISA_i eq 'Class::HPLOO::Base' ;
-      return &{"$ISA_i\::new"}($class,@_) if defined &{"$ISA_i\::new"} ;
+      last if $ISA_i eq 'Class::HPLOO::Base' ;
+      my $sub = "$ISA_i\::new" ;
+      if ( defined &$sub ) {
+        my $new_ref = \&$sub ;
+        return &$sub([$ISA_i,$class,$this],@_) if $new_ref == $NEW_REF || (defined &{"$ISA_i\::__CLASS__"} && defined &{"$ISA_i\::SUPER"} && defined &{"$ISA_i\::new_call_END"} ) ;
+        return &$sub($class,@_) ;
+      }
     }
   }
 
-  my $this = bless({} , $class) ;
+  $this ||= $class ;
+  $this = new_call_BEGIN( $this , @_) ;
+  $this = bless({} , $class_bless) if !ref($this) || !UNIVERSAL::isa($this,$class_bless) ;
   
   no warnings ;
   
@@ -81,11 +249,13 @@ sub new {
   
   my $ret_this = defined &{"$class\::$class_end"} ? $this->$class_end(@_) : undef ;
   
-  if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) {
+  if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class_bless) ) {
     $this = $ret_this ;
     if ( $$CLASS_HPLOO{ATTR} && UNIVERSAL::isa($this,'HASH') ) { CLASS_HPLOO_TIE_KEYS($this) }
   }
   elsif ( $ret_this == $undef ) { $this = undef }
+  
+  new_call_END($class,$this,@_) ;
 
   return $this ;
 }
@@ -267,7 +437,6 @@ sub CLASS_HPLOO_ATTR_TYPE {
     else {
       return [map { CLASS_HPLOO_ATTR_TYPE($class , $tp , $_) || () } @val] ;
     }
-
   }
   elsif ($type =~ /^hash(&?[\w:]+)/ ) {
     my $tp = $1 ;
@@ -280,12 +449,16 @@ sub CLASS_HPLOO_ATTR_TYPE {
   elsif ($type =~ /^refarray(&?[\w:]+)/ ) {
     my $tp = $1 ;
     return undef if ref($_[0]) ne 'ARRAY' ;
-    return CLASS_HPLOO_ATTR_TYPE($class , "array$tp" , @{$_[0]}) ;
+    my $ref = CLASS_HPLOO_ATTR_TYPE($class , "array$tp" , @{$_[0]}) ;
+    @{$_[0]} = @{$ref} ;
+    return $_[0] ;
   }
   elsif ($type =~ /^refhash(&?[\w:]+)/ ) {
     my $tp = $1 ;
     return undef if ref($_[0]) ne 'HASH' ;
-    return CLASS_HPLOO_ATTR_TYPE($class , "hash$tp" , %{$_[0]}) ;
+    my $ref = CLASS_HPLOO_ATTR_TYPE($class , "hash$tp" , %{$_[0]}) ;
+    %{$_[0]} = %{$ref} ;
+    return $_[0] ;
   }
   elsif ($type =~ /^\w+(?:::\w+)*$/ ) {
     return( UNIVERSAL::isa($_[0] , $type) ? $_[0] : undef ) ;
@@ -333,7 +506,13 @@ sub STORE {
     $$ref_changed->{$this->{nm}} = 1 ;
   }
 
-  $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $this->{tp} , @_) ;
+  if ( $this->{pr} ) {
+    my $tp = $this->{tp} =~ /^ref/ ? $this->{tp} : 'ref' . $this->{tp} ;
+    $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $tp , @_) ;
+  }
+  else {
+    $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $this->{tp} , @_) ;  
+  }
 }
 
 sub FETCH {
@@ -346,8 +525,16 @@ sub FETCH {
     my $obj = $$CLASS_HPLOO{OBJ_TBL}{ $this->{oid} } ;
     return (&$sub($obj,@_))[0] if defined &$sub ;
   }
-  else { return $$ref ;}
-  return undef ;
+  else {
+    if ( $this->{tp} =~ /^(?:ref)?(?:array|hash)/ ) {
+      my $ref_changed = $this->{rfcg} ;
+      if ( $ref_changed ) {
+        if ( ref $$ref_changed ne 'HASH' ) { $$ref_changed = {} }
+        $$ref_changed->{$this->{nm}} = 1 ;
+      }
+    }
+    return $$ref ;
+  }
 }
 
 sub UNTIE {}
