@@ -18,9 +18,9 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.04';
+$VERSION = '0.05';
 
-my (%HTML , %COMMENTS , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
+my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
 my (%CACHE , $LOADED) ;
 
@@ -120,15 +120,15 @@ sub dump_code {
   
   $_ = $CACHE{$_} if $RET_CACHE ;
 
+  $_ =~ s/#_CLASS_HPLOO_CLASS_(\d+)#/$CLASSES{$1}/gs if %CLASSES ;
+
   $_ =~ s/_CLASS_HPLOO_FIXER_//gs ;
 
   if ( $DUMP || $BUILD ) {
-    $_ =~ s/#_CLASS_HPLOO_CMT_(\d+)#/$COMMENTS{$1}/gs ;
-    %COMMENTS = () ;
+    $_ =~ s/#_CLASS_HPLOO_CMT_(\d+)#/$COMMENTS{$1}/gs if %COMMENTS ;
   }
-  else {
-    %COMMENTS = () ;
-  }
+
+  %COMMENTS = () ;
 
   if ( $DUMP ) {
     my $syntax = $_ ;
@@ -146,7 +146,7 @@ sub dump_code {
     
   $RET_CACHE = $CACHE{_} = undef ;
   
-  %HTML = () ;
+  %CLASSES = %HTML = () ;
   
 }
 
@@ -172,12 +172,10 @@ sub filter_html_blocks {
     $_ = $1 ;
   }
 
-  %COMMENTS = () ;
+  %CLASSES = %HTML = %COMMENTS = () ;
   
   my $set_init_line = "\n#line $line_init\n" if !$BUILD ;
   my $data = $CACHE{_} = $set_init_line . clean_comments("\n".$_) ;
-    
-  %HTML = () ;
   
   $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ;
   
@@ -247,6 +245,7 @@ sub CLASS_HPLOO {
 
 sub parse_class {
   my $data = shift ;
+  my $is_subclass = shift ;
   
   my $first_sub_ident = $FIRST_SUB_IDENT ;
   $FIRST_SUB_IDENT = undef ;
@@ -264,8 +263,14 @@ sub parse_class {
     if (@ret[0] ne '') {
       $class .= $ret[0] ;
       $data = $ret[1] ;
-      $class = build_class($class) ;
       $init =~ s/[ \t]+$//s ;
+      
+      $class = build_class($class) ;
+      
+      if ( $is_subclass ) {
+        $CLASSES{ ++$CLASSES{x} } = $class ;
+        $class = "#_CLASS_HPLOO_CLASS_$CLASSES{x}#" ;
+      }
     }
     
     $syntax .= $init . $class ;
@@ -364,6 +369,15 @@ sub build_class {
     "$1use vars qw(". join(" ", @vars) .")" ;
   ~gsex ;
   
+  {
+    my $prev_class_name = $PREV_CLASS_NAME ;
+   $PREV_CLASS_NAME = $name ;
+
+    $body = parse_class($body , 1) ;
+
+    $PREV_CLASS_NAME = $prev_class_name ;
+  }
+  
   $body = parse_subs($body) ;
   
   $body =~ s/^[ \t]*\n//gs ;
@@ -387,13 +401,8 @@ sub build_class {
     $class .= "{ package $name ; use strict qw(vars) ;$extends my (%CLASS_HPLOO_HTML , \$this) ; $new$sub_html_eval\n" ;
     $body =~ s/^(?:\r\n?|\n)//s ;
   }
-
-   my $prev_class_name = $PREV_CLASS_NAME ;
-  $PREV_CLASS_NAME = $name ;
   
-  $class .= parse_class($body) ;
-
-  $PREV_CLASS_NAME = $prev_class_name ;
+  $class .= $body ;
   
   $class .= "\n}\n" ;
   
