@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -119,9 +119,7 @@ sub dump_code {
   return if $DO_NOTHING ;
   
   $_ = $CACHE{$_} if $RET_CACHE ;
-
-  $_ =~ s/#_CLASS_HPLOO_CLASS_(\d+)#/$CLASSES{$1}/gs if %CLASSES ;
-
+  
   $_ =~ s/_CLASS_HPLOO_FIXER_//gs ;
 
   if ( $DUMP || $BUILD ) {
@@ -229,13 +227,18 @@ sub CLASS_HPLOO {
   $data =~ s/\Q$;\E....\Q$;\E/"$;HPL_PH". ++$phx ."$;"/egs ;
   
   my $syntax = parse_class($data) ;
+  
+  if ( %CLASSES ) {
+    1 while( $syntax =~ s/#_CLASS_HPLOO_CLASS_(\d+)#/$CLASSES{$1}/gs ) ;
+  }
+  
   $syntax .= "\n1;\n" if $syntax !~ /\s*1\s*;\s*$/ ;
 
   $syntax =~ s/(<\?CLASS_HPLOO_HTML_\w+\?>)/$HTML{$1}{1}$HTML{$1}{2}$HTML{$1}{3}$HTML{$1}{4}/gs ;
   $syntax =~ s/\Q$;\EHPL_PH(\d+)\Q$;\E/$ph[$1]/gs ;
   
   %HTML = () ;
-
+  
   $_ = $SYNTAX = $syntax ;
 }
 

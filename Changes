@@ -1,8 +1,12 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.07  2004-01-17
+      - Fixed bug with subclasses recursion.
 
-0.05  2004-01-16
+
+0.06  2004-01-17
       - Fixed bug with $this and strict.
+
 
 0.05  2004-01-17
       - Fixed bug with subclasses, where subs were parsed more than 1 time.
