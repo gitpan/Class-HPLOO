@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.07';
+$VERSION = '0.08';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -42,9 +42,11 @@ if (!$LOADED) {
     sub new {
       my $class = shift ;
       my $this = bless({} , $class) ;
+      my $undef = \'' ;
+      sub UNDEF {$undef} ;
       my $ret_this = $this->%CLASS%(@_) if defined &%CLASS% ;
       $this = $ret_this if ( UNIVERSAL::isa($ret_this,$class) ) ;
-      $this = undef if ( $ret_this eq '0' ) ;
+      $this = undef if ( $ret_this == $undef ) ;
       return $this ;
     }
   ` ;
@@ -175,7 +177,9 @@ sub filter_html_blocks {
   my $set_init_line = "\n#line $line_init\n" if !$BUILD ;
   my $data = $CACHE{_} = $set_init_line . clean_comments("\n".$_) ;
   
-  $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ;
+  $data =~ s/(\{\s*)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*\})/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## {s}
+  $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*=>)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## s =>
+  $data =~ s/([\$\@\%\*])((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## $q
   
   $data =~ s/<%[ \t]*html?(\w+)[ \t]*>(?:(\(.*?\))|)/CLASS_HPLOO_HTML('$1',$2)/sgi ;
   
@@ -300,10 +304,10 @@ sub extract_block {
     $block .= $1 . $2 ;
     if    ($2 eq '{') { ++$level ;}
     elsif ($2 eq '}') { --$level ;}
-    if ($level == 0) { last ;}
+    if ($level <= 0) { last ;}
   }
 
-  die("Missing right curly or square bracket at data:\n$_[0]") if $level ;
+  die("Missing right curly or square bracket at data:\n$_[0]") if $level != 0 ;
   
   my ($end) = ( $data =~ /\G(.*)$/s ) ;
   
@@ -318,10 +322,10 @@ sub clean_comments {
   my $data = shift ;
   
   if ( $DUMP || $BUILD ) {
-    $data =~ s/([\r\n][^\r\n\#]*)(#+[^\r\n]*)/ ++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = $2 ; "$1#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
+    $data =~ s/([\r\n][^\r\n\# \t]*)(#+[^\r\n]*)/ ++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = $2 ; "$1#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
   }
   else {
-    $data =~ s/([\r\n][^\r\n\#]*)(#+[^\r\n]*)/ my $s = ' ' x length($2) ; "$1$s"/gse ;
+    $data =~ s/([\r\n][^\r\n\# \t]*)(#+[^\r\n]*)/ my $s = ' ' x length($2) ; "$1$s"/gse ;
   }
 
   return $data ;
@@ -727,8 +731,8 @@ The "method" new() is automatically declared by Class::HPLOO, then it calls the 
     }
   }
 
-B<** Note that what the initializer returns is ignored! Unless you return a new constructed object or 0.
-Return 0 makes the creation of the object return undef.>
+B<** Note that what the initializer returns is ignored! Unless you return a new constructed object or UNDEF.
+Return UNDEF (a constant of the class) makes the creation of the object return I<undef>.>
 
 =head1 DESTRUCTOR
 
@@ -748,7 +752,6 @@ You can declare the input variables to reaceive the arguments of the method:
   
   $foo->methodx(123 , 456 , [0,1,2] , {k1 => 'x'} , 7 , 8 , 9 ) ;
 
-=over 10
 
 =head1 HTML BLOCKS
 

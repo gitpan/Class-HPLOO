@@ -1,5 +1,13 @@
 Revision history for Perl extension Class::HPLOO.
 
+
+0.08  2004-01-17
+      - Changed behavior of return 0 for object initializer.
+        Now is reutnr UNDEF, where UNDEF is a constant.
+      - Fixed bug with q|qq|qr|qw|qx|tr|y|s|m. (where still buggy!)
+      - Fixed bug on comments place holder.
+
+
 0.07  2004-01-17
       - Fixed bug with subclasses recursion.
 
