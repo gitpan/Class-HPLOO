@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 my (%HTML , %COMMENTS , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT) ;
 
@@ -92,8 +92,8 @@ sub import {
 
   my $args = join(" ", @_) ;
   
-  if    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ;}
-  elsif ( $args =~ /build/i) { $args =~ s/build//gsi ; $BUILD = 1 ;}
+  if ( $args =~ /build/i) { $args =~ s/build//gsi ; $BUILD = 1 ;}
+  elsif    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ;}
   
   if ( $args =~ /all[_\s]*oo/i) { $SUB_OO = $SUB_ALL_OO ; $ALL_OO = 1 ;}
   else { $SUB_OO = $SUB_AUTO_OO ;}
@@ -160,6 +160,10 @@ sub filter_html_blocks {
   if ( $CACHE{X} == 50 ) { %CACHE = () ;}
   
   if ( $CACHE{$_} ) { $RET_CACHE = 1 ; return ;}
+  
+  if ( $_ =~ /(.*)(?:\r\n?|\n)__END__(?:\r\n?|\n).*?$/s ) {
+    $_ = $1 ;
+  }
 
   %COMMENTS = () ;
   
@@ -167,7 +171,7 @@ sub filter_html_blocks {
     
   %HTML = () ;
   
-  $data =~ s/(\$)(q)/$1\_CLASS_HPLOO_FIXER_$2/gs ;
+  $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ;
   
   $data =~ s/<%[ \t]*html?(\w+)[ \t]*>(?:(\(.*?\))|)/CLASS_HPLOO_HTML('$1',$2)/sgi ;
                                    
@@ -225,12 +229,15 @@ sub CLASS_HPLOO {
       $data = $ret[1] ;
       $class = build_class($class) ;
     }
+    
     $syntax .= $init . $class ;
   }
   
   $syntax .= $data ;
   
   $syntax .= "\n1;\n" if $syntax !~ /\s*1\s*;\s*$/ ;
+  
+
 
   $syntax =~ s/(<\?CLASS_HPLOO_HTML_\w+\?>)/$HTML{$1}{1}$HTML{$1}{2}$HTML{$1}{3}$HTML{$1}{4}/gs ;
   $syntax =~ s/\Q$;\EHPL_PH(\d+)\Q$;\E/$ph[$1]/gs ;
@@ -245,7 +252,8 @@ sub CLASS_HPLOO {
 #################
 
 sub extract_block {
-  my $data = shift ;
+  my ( $data ) = @_ ;
+  
   my $block ;
   
   my $level ;
@@ -255,8 +263,10 @@ sub extract_block {
     elsif ($2 eq '}') { --$level ;}
     if ($level == 0) { last ;}
   }
+
+  die("Missing right curly or square bracket at data:\n$_[0]") if $level ;
   
-  my ($end) = ( $data =~ /\G(.*)$/s );
+  my ($end) = ( $data =~ /\G(.*)$/s ) ;
   
   return ($block,$end) ;
 }
@@ -307,7 +317,7 @@ sub build_class {
   $new =~ s/%CLASS%/$name_end/gs ;
   
   $body =~ s~
-    \Wvars\s*\(
+    ((?:^|[^\w\s])\s*)(?:use\s+)?vars\s*\(
       (
         (?:
           \s*[\$\@\%]\w[\w:]*\s*
@@ -317,8 +327,8 @@ sub build_class {
       \s*,?\s*
     \)
   ~
-    my @vars = split(/\s*,\s*/s , $1) ;
-    "use vars qw(". join(" ", @vars) .")" ;
+    my @vars = split(/\s*,\s*/s , $2) ;
+    "$1use vars qw(". join(" ", @vars) .")" ;
   ~gsex ;
   
   $body = parse_subs($body) ;
@@ -608,7 +618,7 @@ This is the implemantation of OO-Classes for HPL. This bring a easy way to creat
       $this->{attr} = $_[0] ;
     }
   
-    ## methos with input variables declared:
+    ## methods with input variables declared:
     sub get_pages ($base , \@pages , \%options) {
       my @htmls ;
       
@@ -649,7 +659,8 @@ The "method" new() is automatically declared by Class::HPLOO, then it calls the 
     }
   }
 
-** Note that what the initializer returns is ignored!
+B<** Note that what the initializer returns is ignored! Unless you return a new constructed object or 0.
+Return 0 makes the creation of the object return undef.>
 
 =head1 DESTRUCTOR
 

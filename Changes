@@ -1,5 +1,12 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.03  2004-01-16
+      - Fixed bug with q|qq|qr|qw|qx|tr|y|s|m.
+      - Enable syntax "use vars ($var)", since is common to add the "use" before.
+      - Added die alert for extract_block() for non well closed blocks.
+      - Now __END__.* is striped from the source.
+
+
 0.02  2004-01-16
       - Now produce better formatted code when using import option "nice" or "dump"
       - New script nuil-hploo.pl, to convert .hploo files to .pm.
