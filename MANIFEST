@@ -1,10 +1,11 @@
 Changes
-HPLOO.pm
 MANIFEST
 Makefile.PL
 README
-script/build-hploo.pl
 test.pl
+lib/Class/HPLOO.pm
+lib/Class/HPLOO/Base.pm
+script/build-hploo.pl
 test/attr.pm
 test/classtest.pm
 test/classtest2.pm

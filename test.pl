@@ -88,7 +88,7 @@ BEGIN { plan tests => 32 } ;
   ok( $foo->set_list(qw(a b c)) ) ;
   my @l = $foo->get_list ;
   ok( join(" ",@l) , 'a b c' ) ;
-  ok( $foo->{list} , 3 ) ;
+  ok( $#{$foo->{list}} , 2 ) ;
   
   ok( $foo->set_special(["wwwaaaaa","isssaaa"]) ) ;
   @l = @{ $foo->get_special } ;

@@ -18,15 +18,15 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.16';
+$VERSION = '0.17';
 
-my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
+my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
 my (%CACHE , $LOADED) ;
 
 ###################################
 
-my (%REF_TYPES , $CLASS_NEW , $CLASS_NEW_ATTR , $SUB_AUTO_OO , $SUB_ALL_OO , $SUB_HTML_EVAL , $SUB_ATTR) ;
+my (%REF_TYPES , $CLASS_NEW , $CLASS_NEW_ATTR , $SUB_AUTO_OO , $SUB_ALL_OO , $SUB_HTML_EVAL , $SUB_ATTR , $USE_BASE_REF) ;
 
 if (!$LOADED) {
   
@@ -44,7 +44,7 @@ if (!$LOADED) {
       unshift(@_ , $pack) if ( (!ref($_[0]) && $_[0] ne $pack) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $pack)) ) ;
       my $sub = $sub0 ;
       $sub =~ s/.*?(\w+)$/$1/ ;
-      $sub = 'new' if $sub0 =~ /(?:^|::)$sub::$sub$/ ;
+      $sub = 'new' if $sub0 =~ /(?:^|::)$sub\::$sub$/ ;
       $sub = "SUPER::$sub" ;
       $_[0]->$sub(@_[1..$#_]) ;
     }
@@ -112,7 +112,7 @@ if (!$LOADED) {
       my $this = shift ;
       if ( $CLASS_HPLOO{ATTR} ) {
         foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
-          tie( $this->{$Key} => '%PACKAGE%::HPLOO_TIESCALAR' , $this , $Key , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} , \$this->{CLASS_HPLOO_CHANGED} , %PACKAGE% ) if !exists $this->{$Key} ;
+          tie( $this->{$Key} => '%PACKAGE%::HPLOO_TIESCALAR' , $this , $Key , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} , \$this->{CLASS_HPLOO_CHANGED} , '%PACKAGE%' ) if !exists $this->{$Key} ;
         }
       }
     }
@@ -123,14 +123,14 @@ if (!$LOADED) {
     my $CLASS_HPLOO ;
   
     $CLASS_HPLOO = $this if defined $this ;
-    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO ;
+    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : $CLASS_HPLOO ;
     my $CLASS = ref($this) || __PACKAGE__ ;
   
     $CLASS_HPLOO = undef ;
   ` ;  
   
   $SUB_ALL_OO = q`
-    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : undef ;
+    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],__PACKAGE__) ? shift : undef ;
     my $CLASS = ref($this) || __PACKAGE__ ;
   ` ;
   
@@ -147,6 +147,8 @@ if (!$LOADED) {
   
   sub GET_CLASS_HPLOO_HASH { return \%CLASS_HPLOO } ;
   
+  sub ATTRS { return @{[@{ $CLASS_HPLOO{ATTR_ORDER} }]} } ;
+  
   sub CLASS_HPLOO_ATTR {
     my @attrs = split(/\s*,\s*/ , $_[0]) ;
 
@@ -154,15 +156,28 @@ if (!$LOADED) {
       $attrs_i =~ s/^\s+//s ;
       $attrs_i =~ s/\s+$//s ;
       my ($name) = ( $attrs_i =~ /(\w+)$/gi ) ;
-      my ($type) = ( $attrs_i =~ /^((?:\w+\s+)*?&?\w+)\s+\w+$/gi ) ;
+      my ($type) = ( $attrs_i =~ /^((?:\w+\s+)*?&?\w+|(?:\w+\s+)*?\w+(?:(?:::|\.)\w+)*)\s+\w+$/gi ) ;
+      
+      my $type0 = $type ;
+      $type0 =~ s/\s+/ /gs ;
+      
       $type = lc($type) ;
+      $type =~ s/(?:^|\s*)bool$/boolean/gs ;
       $type =~ s/(?:^|\s*)int$/integer/gs ;
       $type =~ s/(?:^|\s*)float$/floating/gs ;
       $type =~ s/(?:^|\s*)str$/string/gs ;
       $type =~ s/(?:^|\s*)sub$/sub_$name/gs ;
       $type =~ s/\s//gs ;
       
-      $type = 'any' if $type !~ /^(?:(?:ref)|(?:ref)?(?:array|hash)(?:integer|floating|string|sub_\w+|any|&\w+)|(?:ref)?(?:array|hash)|(?:array|hash)?(?:integer|floating|string|sub_\w+|any|&\w+))$/ ;
+      $type = 'any' if $type !~ /^(?:(?:ref)|(?:ref)?(?:array|hash)(?:boolean|integer|floating|string|sub_\w+|any|&\w+)|(?:ref)?(?:array|hash)|(?:array|hash)?(?:boolean|integer|floating|string|sub_\w+|any|&\w+))$/ ;
+
+      if ( $type eq 'any' && $type0 =~ /^((?:ref\s*)?(?:array|hash) )?(\w+(?:(?:::|\.)\w+)*)$/ ) {
+        my ($tp1 , $tp2) = ($1 , $2) ;
+        $tp1 =~ s/\s+//gs ;
+        $tp2 = 'UNIVERSAL' if $tp2 =~ /^(?:obj|object)$/i ;
+        $tp2 =~ s/\.+/::/gs ;
+        $type = "$tp1$tp2" ;      
+      }
       
       my $parse_ref = $type =~ /^(?:array|hash)/ ? 1 : 0 ;
       
@@ -193,11 +208,11 @@ if (!$LOADED) {
       sub set_$name {
         my \$this = shift ;
         if ( !defined \$this->{$name} ) {
-          tie( \$this->{$name} => '%PACKAGE%::HPLOO_TIESCALAR' , \$this , '$name' , '$type' , $parse_ref , \\\\\\$this->{CLASS_HPLOO_ATTR}{$name} , \\\\\\$this->{CLASS_HPLOO_CHANGED} , %PACKAGE% ) ;
+          tie( \$this->{$name} => '%PACKAGE%::HPLOO_TIESCALAR' , \$this , '$name' , '$type' , $parse_ref , \\\\\\$this->{CLASS_HPLOO_ATTR}{$name} , \\\\\\$this->{CLASS_HPLOO_CHANGED} , '%PACKAGE%' ) ;
         }
         
         \$this->{CLASS_HPLOO_CHANGED}{$name} = 1 ;
-        \$this->{CLASS_HPLOO_ATTR}{$name} = CLASS_HPLOO_ATTR_TYPE('$type',\@_) ;
+        \$this->{CLASS_HPLOO_ATTR}{$name} = CLASS_HPLOO_ATTR_TYPE( ref(\$this) , '$type',\@_) ;
       }
       ~) if !defined &{"set_$name"} ;
       
@@ -217,17 +232,19 @@ if (!$LOADED) {
       my $this = bless( { nm => $_[0] , tp => $_[1] , pr => $_[2] , rf => $_[3] , rfcg => $_[4] , pk => ($_[5] || scalar caller) } , __PACKAGE__ ) ;
             
       if ( $this->{tp} =~ /^sub_(\w+)$/ ) {
-        if ( !ref($CLASS_HPLOO{OBJ_TBL}) ) {
+        my $CLASS_HPLOO = %PACKAGE%::GET_CLASS_HPLOO_HASH() ;
+      
+        if ( !ref($$CLASS_HPLOO{OBJ_TBL}) ) {
           eval { require Hash::NoRef } ;
           if ( !$@ ) {
-            $CLASS_HPLOO{OBJ_TBL} = {} ;
-            tie( %{$CLASS_HPLOO{OBJ_TBL}} , 'Hash::NoRef') ;
+            $$CLASS_HPLOO{OBJ_TBL} = {} ;
+            tie( %{$$CLASS_HPLOO{OBJ_TBL}} , 'Hash::NoRef') ;
           }
           else { $@ = undef }
         }
 
-        $CLASS_HPLOO{OBJ_TBL}{ ++$CLASS_HPLOO{OBJ_TBL}{x} } = $obj ;
-        $this->{oid} = $CLASS_HPLOO{OBJ_TBL}{x} ;
+        $$CLASS_HPLOO{OBJ_TBL}{ ++$$CLASS_HPLOO{OBJ_TBL}{x} } = $obj ;
+        $this->{oid} = $$CLASS_HPLOO{OBJ_TBL}{x} ;
       }
 
       return $this ;
@@ -243,7 +260,7 @@ if (!$LOADED) {
         $$ref_changed->{$this->{nm}} = 1 ;
       }
 
-      $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}( $this->{tp} , @_) ;
+      $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}($this->{pk} , $this->{tp} , @_) ;
     }
     
     sub FETCH {
@@ -251,19 +268,12 @@ if (!$LOADED) {
       my $ref = $this->{rf} ;
       
       if ( $this->{tp} =~ /^sub_(\w+)$/ ) {
+        my $CLASS_HPLOO = %PACKAGE%::GET_CLASS_HPLOO_HASH() ;
         my $sub = $this->{pk} . '::' . $1 ;
-        my $obj = $CLASS_HPLOO{OBJ_TBL}{ $this->{oid} } ;
+        my $obj = $$CLASS_HPLOO{OBJ_TBL}{ $this->{oid} } ;
         return (&$sub($obj,@_))[0] if defined &$sub ;
       }
-      else {
-        if ( $this->{pr} ) {
-          return
-            ref($$ref) eq 'ARRAY' ? @{$$ref} :
-            ref($$ref) eq 'HASH' ? %{$$ref} :
-            $$ref
-        }
-        else { return $$ref }
-      }
+      else { return $$ref ;}
       return undef ;
     }
     
@@ -272,11 +282,17 @@ if (!$LOADED) {
   }
   
   sub CLASS_HPLOO_ATTR_TYPE {
+    my $class = shift ;
     my $type = shift ;
     
     if ($type eq 'any') { return $_[0] }
     elsif ($type eq 'string') {
       return "$_[0]" ;
+    }
+    elsif ($type eq 'boolean') {
+      return if $_[0] =~ /^(?:false|null|undef)$/i ;
+      return 1 if $_[0] ;
+      return ;
     }
     elsif ($type eq 'integer') {
       my $val = $_[0] ;
@@ -322,36 +338,45 @@ if (!$LOADED) {
       my $val = $_[0] ;
       return $val if ref($val) eq 'HASH' ;
     }
-    elsif ($type =~ /^array(&?\w+)/ ) {
+    elsif ($type =~ /^array(&?[\w:]+)/ ) {
       my $tp = $1 ;
       my @val = @_ ;
-      foreach my $val_i ( @val ) {
-        $val_i = CLASS_HPLOO_ATTR_TYPE($tp , $val_i) ;
+      my $accept_undef = $tp =~ /^(?:any|string|boolean|integer|floating|sub_\w+|&\w+)$/ ? 1 : undef ;
+      if ( $accept_undef ) {
+        return [map { CLASS_HPLOO_ATTR_TYPE($class , $tp , $_) } @val] ;
       }
-      return \@val ;
+      else {
+        return [map { CLASS_HPLOO_ATTR_TYPE($class , $tp , $_) || () } @val] ;
+      }
+
     }
-    elsif ($type =~ /^hash(&?\w+)/ ) {
+    elsif ($type =~ /^hash(&?[\w:]+)/ ) {
       my $tp = $1 ;
       my %val = @_ ;
       foreach my $Key ( keys %val ) {
-        $val{$Key} = CLASS_HPLOO_ATTR_TYPE($tp , $val{$Key}) ;
+        $val{$Key} = CLASS_HPLOO_ATTR_TYPE($class , $tp , $val{$Key}) ;
       }
       return \%val ;
     }
-    elsif ($type =~ /^refarray(&?\w+)/ ) {
+    elsif ($type =~ /^refarray(&?[\w:]+)/ ) {
       my $tp = $1 ;
       return undef if ref($_[0]) ne 'ARRAY' ;
-      return CLASS_HPLOO_ATTR_TYPE("array$tp" , @{$_[0]}) ;
+      return CLASS_HPLOO_ATTR_TYPE($class , "array$tp" , @{$_[0]}) ;
     }
-    elsif ($type =~ /^refhash(&?\w+)/ ) {
+    elsif ($type =~ /^refhash(&?[\w:]+)/ ) {
       my $tp = $1 ;
       return undef if ref($_[0]) ne 'HASH' ;
-      return CLASS_HPLOO_ATTR_TYPE("hash$tp" , %{$_[0]}) ;
+      return CLASS_HPLOO_ATTR_TYPE($class , "hash$tp" , %{$_[0]}) ;
+    }
+    elsif ($type =~ /^\w+(?:::\w+)*$/ ) {
+      return( UNIVERSAL::isa($_[0] , $type) ? $_[0] : undef ) ;
     }
     return undef ;
   }
   ` ;
-
+  
+  $USE_BASE_REF = "use Class::HPLOO::Base ;" ;
+  
   $CLASS_NEW   =~ s/[ \t]*\n[ \t]*/ /gs ;
   $CLASS_NEW_ATTR =~ s/[ \t]*\n[ \t]*/ /gs ;
   $SUB_AUTO_OO =~ s/[ \t]*\n[ \t]*/ /gs ;
@@ -370,9 +395,11 @@ if (!$LOADED) {
 sub import {
   my $class = shift ;
   
-  ($SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
+  ($SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
 
   my $args = join(" ", @_) ;
+  
+  if ( $args =~ /use[_\s]*base/i) { $USE_BASE = 1 ;}
   
   if ( $args =~ /build/i) { $args =~ s/(?:build|dump|nice)//gsi ; $BUILD = 1 ; $NICE = 1 ;}
   elsif    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ; $NICE = 1 ;}
@@ -385,6 +412,7 @@ sub import {
   if ( $args =~ /no[_\s]*clean[_\s]*arg/i) { $NO_CLEAN_ARGS = 1 ;}
   
   if ( $args =~ /do\s*nothing/i ) { $DO_NOTHING = 1 ;}
+
 }
 
 ##########
@@ -732,15 +760,17 @@ sub build_class {
     $extends_i = package_name($extends_i);
   }
   
+  my $isa_base = $USE_BASE ? 'Class::HPLOO::Base UNIVERSAL' : 'UNIVERSAL' ;
+  
   if ( @extends ) {
-    $extends = "use vars qw(\@ISA) ; push(\@ISA , qw(". join(' ',@extends) ." UNIVERSAL)) ;" ;
+    $extends = "push(\@ISA , qw(". join(' ',@extends) ." $isa_base)) ;" ;
   }
   else {
-    $extends = "use vars qw(\@ISA) ; \@ISA = qw(UNIVERSAL) ;" ;
+    $extends = "\@ISA = qw($isa_base) ;" ;
   }
 
   if ( $version ) {
-    $version = "use vars qw(\$VERSION) ; \$VERSION = '$version' ;" ;
+    $version = "\$VERSION = '$version' ;" ;
   }
   
   my ($name_end) = ( $name =~ /(\w+)$/ );
@@ -761,11 +791,11 @@ sub build_class {
     "$1use vars qw(". join(" ", @vars) .")" ;
   ~gsex ;
   
-  ## attr ( foo , int bar ) ;
+  ## attr ( foo , int bar , Foo::Bar bar ) ;
   my $add_attr ;
   
   {
-    my $vars = qr/(?:(?:\w+\s+)*?&?\w+\s+)?\w+/s ;
+    my $vars = qr/(?:(?:\w+\s+)*?&?\w+\s+|(?:\w+\s+)*?\w+(?:(?:::|\.)\w+)*\s+)?\w+/s ;
     
     $body =~ s~
       ((?:^|[^\w\s])\s*)(?:attrs?|attributes?)\s*\(
@@ -807,15 +837,30 @@ sub build_class {
   
   my $sub_html_eval = $ADD_HTML_EVAL ? $SUB_HTML_EVAL : undef ;
   
-  my @local_vars = qw(%CLASS_HPLOO) ;
+  ###################
+  
+  my @local_vars ;
 
   push(@local_vars , '$this') if !$ALL_OO ;
 
   my $local_vars ;
   if ( @local_vars ) { $local_vars = "my (". join(' , ', @local_vars) .") ;" ;}
   
+  ###################
+  
+  my @global_vars = qw(%CLASS_HPLOO @ISA) ;
+  
+  push(@global_vars , '$VERSION') if $version ;
+
+  my $global_vars ;
+  if ( @global_vars ) { $global_vars = "use vars qw(". join(' ', @global_vars) .") ;" ;}
+  
+  ###################
+  
   my $const_class = "my \$CLASS = '$name' ; sub __CLASS__ { '$name' } ;" ;
   
+  my $use_base_ref = $USE_BASE ? $USE_BASE_REF : '' ;
+    
   my $class ;
   
   if ( $NICE || $BUILD ) {
@@ -826,7 +871,7 @@ sub build_class {
     $class .= "{ package $name ;\n" ;
     $class .= "\n${FIRST_SUB_IDENT}use strict qw(vars) ; no warnings ;\n" ;
     
-    ##$class .= "\n${FIRST_SUB_IDENT}use vars qw(\$VERSION) ;\n${FIRST_SUB_IDENT}$VERSION = '$version' ;\n" if $version ;
+    $class .= "\n$FIRST_SUB_IDENT$global_vars\n" if $global_vars ;
     
     if ( $version ) {
       $version =~ s/;\s+/;\n$FIRST_SUB_IDENT/ ;
@@ -839,14 +884,19 @@ sub build_class {
     
     $class .= "\n$FIRST_SUB_IDENT$const_class\n" ;
     
-    $class .= "$new\n" ;
+    $class .= "$new\n" if !$USE_BASE ;
     
     $class .= "\n$sub_html_eval\n" if $sub_html_eval ;
     
-    $class .= "\n$sub_attr\n" if $sub_attr ;
+    $class .= "\n$sub_attr\n" if !$USE_BASE && $sub_attr ;
+    
+    $class .= "\n$FIRST_SUB_IDENT$use_base_ref\n" if $use_base_ref ;
   }
   else {
-    $class .= "{ package $name ; use strict qw(vars) ; no warnings ;$version$extends$local_vars$const_class$new$sub_html_eval$sub_attr\n" ;
+    $new = '' if $USE_BASE ;
+    $sub_attr = '' if $USE_BASE ;
+    
+    $class .= "{ package $name ; use strict qw(vars) ; no warnings ;$global_vars$version$extends$local_vars$const_class$new$sub_html_eval$sub_attr$use_base_ref\n" ;
     $body =~ s/^(?:\r\n?|\n)//s ;
   }
   
@@ -871,6 +921,18 @@ sub format_nice_sub {
   $sub =~ s/\n[ \t]*(})$/\n$FIRST_SUB_IDENT$1/s ;
   $sub =~ s/(\S)( {) (\S)/$1$2\n$FIRST_SUB_IDENT  $3/gs ;
   return $sub ;
+}
+
+###############
+# FORMAT_NICE #
+###############
+
+sub format_nice {
+  my $code = shift ;
+  if ( !$code ) { return $code ;}
+  $code =~ s/(\s*;)\s*/$1\n$FIRST_SUB_IDENT/gs ;
+  $code =~ s/^(\s*)/$1\n$FIRST_SUB_IDENT/gs ;
+  return $code ;
 }
 
 ##############
@@ -1264,6 +1326,10 @@ Accept any type of value.
 
 A normal string.
 
+=item boolean | bool
+
+A boolean value. Also accept 'true' and 'false' strings.
+
 =item integer | int
 
 An integer that accepts only I<[0-9]> digits.
@@ -1288,6 +1354,17 @@ Define an attribute as a sub call:
   ## or
   print " $foo->{id} \n" ;
 
+=item Object
+
+This type will accept only object types or a defined object class:
+
+  class Foo {
+    attr ( XML::Smart xml , object any_obj , obj any_obj2 , UNIVERSAL any_obj3 ) ;
+  }
+
+In the example above the attribute I<xml> will accept only objects from I<XML::Smart>,
+or objects that inherites from I<XML::Smart>. The attribute any_obj will aceept any type of
+object. You can see that the types I<object>, I<obj> and I<UNIVERSAL> are all the same.
 
 =back
 
@@ -1426,6 +1503,19 @@ You can declare the input variables to receive the arguments of the method:
   
   $foo->methodx(123 , 456 , [0,1,2] , {k1 => 'x'} , 7 , 8 , 9 ) ;
 
+=head2 PREDEFINED METHODS
+
+=over 10
+
+=item ATTRS
+
+Return the list of attributes in the declaration order.
+
+=item __CLASS__
+
+A constant that returns the name of the class.
+
+=back
 
 =head1 HTML BLOCKS
 
@@ -1461,6 +1551,78 @@ You also can handle the base name of a class adding "." in the begin of the clas
 
 B<In the example above, the class name I<.in> will be translated as I<foo::in>.>
 
+=head1 USE_BASE
+
+By default the code generated by I<Class::HPLOO> is stand alone, so you don't need
+to install I<Class::HPLOO> to run it, but as disadvantage the code to be loaded
+by a group of classes built with I<Class::HPLOO> will be bigger.
+
+As an option you can use the I<USE_BASE> parameter, that will define the use
+of the class I<Class::HPLOO::Base> in the I<@ISA> path, so all the common codes
+for class that are built by I<Class::HPLOO> will be shared, saving memory and load time:
+
+  use Class::HPLOO qw(use_base) ;
+  
+  class Foo {
+  }
+
+That will generate this code:
+
+  { package Foo ;
+  
+  use strict qw(vars) ; no warnings ;
+  
+  use vars qw(%CLASS_HPLOO @ISA) ;
+  
+  @ISA = qw(Class::HPLOO::Base UNIVERSAL) ;
+  
+  my $CLASS = 'Foo' ; sub __CLASS__ { 'Foo' } ;
+  
+  use Class::HPLOO::Base ;
+    
+  }
+
+Without I<USE_BASE> this is the default code to be generated:
+
+  { package Foo ;
+  
+  use strict qw(vars) ; no warnings ;
+  
+  use vars qw(%CLASS_HPLOO @ISA) ;
+  
+  @ISA = qw(UNIVERSAL) ;
+  
+  my $CLASS = 'Foo' ; sub __CLASS__ { 'Foo' } ;
+   
+  sub new { 
+    if ( !defined &Foo && @ISA > 1 ) {
+      foreach my $ISA_i ( @ISA ) {
+        return &{"$ISA_i\::new"}(@_) if defined &{"$ISA_i\::new"} ;
+      }
+    }
+    my $class = shift ;
+    my $this = bless({} , $class) ;
+    no warnings ;
+    my $undef = \'' ;
+    sub UNDEF {$undef} ;
+    my $ret_this = defined &Foo ? $this->Foo(@_) : undef ;
+    if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) { $this = $ret_this }
+    elsif ( $ret_this == $undef ) { $this = undef }
+    return $this ;
+  }
+    
+  sub SUPER {
+    my ($pack , undef , undef , $sub0) = caller(1) ;
+    unshift(@_ , $pack) if ( (!ref($_[0]) && $_[0] ne $pack) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $pack)) ) ;
+    my $sub = $sub0 ;
+    $sub =~ s/.*?(\w+)$/$1/ ;
+    $sub = 'new' if $sub0 =~ /(?:^|::)$sub\::$sub$/ ;
+    $sub = "SUPER::$sub" ;
+    $_[0]->$sub(@_[1..$#_]) ;
+  }
+    
+  }
+
 =head1 DUMP
 
 You can dump the generated code:
@@ -1473,13 +1635,13 @@ You can dump the generated code:
 
 The script "build-hploo.pl" can be used to convert I<.hploo> files to I<.pm> files.
 
-Soo, you can write a Perl Module with Class::HPLOO and release it as a normal I<.pm>
+So you can write a Perl Module with Class::HPLOO and release it as a normal I<.pm>
 file without need I<Class::HPLOO> installed.
 
 If you have L<ePod> (0.03+) installed you can use ePod to write your documentation.
 For I<.hploo> files the ePod need to be always after __END__.
 
-Note that ePod accepts POD syntax too, soo you still can use normal POD for documentation.
+Note that ePod accepts POD syntax too, so you still can use normal POD for documentation.
 
 =head1 SEE ALSO
 
