@@ -12,7 +12,7 @@ WriteMakefile(
                        'Filter::Util::Call' => 1.06 ,
                        'Text::Balanced' => 1.89 ,
                       } ,
-    'EXE_FILES'     => [ qw(script/build-hploo.pl) ],
+    'EXE_FILES'     => [ qw(script/build-hploo) ],
     ($] >= 5.005 ?
       ( ABSTRACT_FROM => 'lib/Class/HPLOO.pm',
         AUTHOR        => 'Graciliano M. P. <gmpassos@cpan.org>'

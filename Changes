@@ -1,5 +1,9 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.21  2004-12-16
+      - Added Inline::MakeMaker support for inline functions.
+
+
 0.20  2004-12-15
       - Fixed some warnings.
 

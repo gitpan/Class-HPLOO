@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.20';
+$VERSION = '0.21';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -897,7 +897,9 @@ sub build_class {
     $extends = "\@ISA = qw($isa_base) ;" ;
   }
 
+  my $version_number ;
   if ( $version ) {
+    $version_number = $version ;
     $version = "\$VERSION = '$version' ;" ;
   }
   
@@ -956,7 +958,7 @@ sub build_class {
     $PREV_CLASS_NAME = $prev_class_name ;
   }
   
-  $body = parse_subs($body) ;
+  $body = parse_subs($body,$name,$version_number) ;
   
   $body =~ s/^[ \t]*\n//gs ;
   
@@ -1069,6 +1071,11 @@ sub format_nice {
 
 sub parse_subs {
   my $data = shift ;
+  my $class_name = shift ;
+  my $class_version = shift ;
+  
+  $class_version ||= '0.01' ;
+  
   my $syntax ;
   
   my ( $init , $sub , %inline ) ;
@@ -1109,7 +1116,25 @@ sub parse_subs {
   $syntax .= $data ;
   
   foreach my $Key ( sort keys %inline ) {
-    my $src = "use Inline $Key => <<'__INLINE_$Key\_SRC__';\n\n" ;
+    #my $src = "use Inline $Key => <<'__INLINE_$Key\_SRC__' , NAME => '$class_name' , VERSION => '$class_version' ;\n\n" ;
+    
+    my $src = q`
+my $INLINE_INSTALL ;
+BEGIN {
+  use Config ;
+  my @installs = ($Config{installarchlib} , $Config{installprivlib} , $Config{installsitelib}) ;
+  foreach my $i ( @installs ) { $i =~ s/[\\\\\/]/\//gs ;}
+  $INLINE_INSTALL = 1 if ( __FILE__ =~ /\.pm$/ && ( join(" ",@INC) =~ /\Wblib\W/s || __FILE__ =~ /^(?:\Q$installs[0]\E|\Q$installs[1]\E|\Q$installs[2]\E)/ ) ) ;
+}
+`;
+
+    $src =~ s/^\s+//s ;
+    $src =~ s/\s+$//s ;
+    $src =~ s/\s+/ /gs ;
+    $src .= "\n\n" ;
+
+    $src .= qq`use Inline $Key => <<'__INLINE_$Key\_SRC__' , ( \$INLINE_INSTALL ? (NAME => '$class_name' , VERSION => '$class_version') : () ) ;\n\n` ;
+
     $src .= $inline{$Key} ;
     $src =~ s/\s+$/\n/s ;
     $src .= "\n__INLINE_$Key\_SRC__\n\n" ;

@@ -1,0 +1,8 @@
+
+  use Class::HPLOO::Build ;
+
+  Class::HPLOO::Build::build( @ARGV ) ;
+
+1;
+
+
