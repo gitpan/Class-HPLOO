@@ -33,7 +33,9 @@ BEGIN { plan tests => 1 } ;
   eval { require "test/classtest2.pm" } ;
   ok(!$@) ;
   
-#  print "$Class::HPLOO::SYNTAX\n" ;
+  print "$@\n" if $@ ;
+  
+  ##print "$Class::HPLOO::SYNTAX\n" ;
   
 }
 #########################

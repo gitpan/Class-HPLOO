@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.08';
+$VERSION = '0.09';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -391,12 +391,14 @@ sub build_class {
   
   my $sub_html_eval = $SUB_HTML_EVAL if $ADD_HTML_EVAL ;
   
-  my $local_vars = '%CLASS_HPLOO_HTML' if $SUB_HTML_EVAL ;
+  my $local_vars ;
+  $local_vars = '%CLASS_HPLOO_HTML' if $ADD_HTML_EVAL ;
+
   if ( !$ALL_OO ) {
     $local_vars .= ' , ' if $local_vars ;
     $local_vars .= '$this' ;
   }
-  
+
   if ( $local_vars ) { $local_vars = "my ($local_vars) ;" ;}
   
   my $class ;
@@ -585,7 +587,14 @@ sub build_hploo {
     close ($fh) ;
   }
   
-  my ($file_init,$file_splitter,$file_end) = ( $file_data =~ /(.*)(\n__END__\n)(.*?)$/s );
+  my ($file_init,$file_splitter,$file_end) ;
+  
+  if ( $file_data =~ /(.*)(\n__END__\n)(.*?)$/s ) {
+    ($file_init,$file_splitter,$file_end) = ($1 , $2 , $3) ;
+  }
+  else {
+    $file_init = $file_data ;
+  }
   
   my ($import_args) = ( $file_init =~ /(?:^|\n)[ \t]*use[ \t]+Class::HPLOO(?:(\W.*?);|;)/s );
   
@@ -641,7 +650,7 @@ sub build_hploo {
   eval(q` require ePod `);
   if ( !$@ ) { $epod = new ePod( over_size => 4 ) ;}
   
-  if ( $epod && $epod->VERSION >= 0.03 && $epod->is_epod($file_end) ) {
+  if ( $file_end ne '' && $epod && $epod->VERSION >= 0.03 && $epod->is_epod($file_end) ) {
     $file_end = $epod->epod2pod($file_end) ;
     $file_end =~ s/^\n//s ;
   }
