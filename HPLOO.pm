@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.11';
+$VERSION = '0.12';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -42,16 +42,30 @@ if (!$LOADED) {
     sub new {
       my $class = shift ;
       my $this = bless({} , $class) ;
+      
+      no warnings ;
+      
       my $undef = \'' ;
       sub UNDEF {$undef} ;
-      my $ret_this = defined &%CLASS% ? $this->%CLASS%(@_) : undef ;
-      $this = $ret_this if ( UNIVERSAL::isa($ret_this,$class) ) ;
-      $this = undef if ( $ret_this == $undef ) ;
-      if ( $this && $CLASS_HPLOO{ATTR} ) {
+      
+      if ( $CLASS_HPLOO{ATTR} ) {
         foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
           tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
         }
       }
+      
+      my $ret_this = defined &%CLASS% ? $this->%CLASS%(@_) : undef ;
+      
+      if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) {
+        $this = $ret_this ;
+        if ( $CLASS_HPLOO{ATTR} && UNIVERSAL::isa($this,'HASH') ) {
+          foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
+            tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
+          }
+        }
+      }
+      elsif ( $ret_this == $undef ) { $this = undef ;}
+
       return $this ;
     }
   ` ;
@@ -60,14 +74,14 @@ if (!$LOADED) {
     my $CLASS_HPLOO ;
   
     $CLASS_HPLOO = $this if defined $this ;
-    my $this = UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO ;
+    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO ;
     my $class = ref($this) || __PACKAGE__ ;
   
     $CLASS_HPLOO = undef ;
   ` ;  
   
   $SUB_ALL_OO = q`
-    my $this = UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : undef ;
+    my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : undef ;
   ` ;
   
   $SUB_HTML_EVAL = q~
@@ -116,11 +130,14 @@ if (!$LOADED) {
         }
         \$this->{CLASS_HPLOO_ATTR}{$name} = CLASS_HPLOO_ATTR_TYPE('$type',\@_) ;
       }
+      ~) if !defined &{"set_$name"} ;
+      
+      eval(qq~
       sub get_$name {
         my \$this = shift ;
         $return ;
       }
-      ~) ;
+      ~) if !defined &{"get_$name"} ;
     }
   }
   
@@ -161,7 +178,9 @@ if (!$LOADED) {
     }
     elsif ($type eq 'integer') {
       my $val = $_[0] ;
+      my ($sig) = ( $val =~ /^(-)/ );
       $val =~ s/[^0-9]//gs ;
+      $val = "$sig$val" ;
       return $val ;
     }
     elsif ($type eq 'floating') {
@@ -277,6 +296,7 @@ sub dump_code {
   $_ = $CACHE{$_} if $RET_CACHE ;
   
   $_ =~ s/_CLASS_HPLOO_FIXER_//gs ;
+  $_ =~ s/_CLASS_HPLOO_\/DIV_FIX_//gs ;  
 
   if ( $DUMP || $BUILD ) {
     $_ =~ s/#_CLASS_HPLOO_CMT_(\d+)#/$COMMENTS{$1}/gs if %COMMENTS ;
@@ -333,8 +353,13 @@ sub filter_html_blocks {
   
   $data =~ s/(\{\s*)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*\})/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## {s}
   $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*=>)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## s =>
+  $data =~ s/(->)((?:q|qq|qr|qw|qx|tr|y|s|m)\W)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## ->s
+  
   $data =~ s/([\$\@\%\*])((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## $q
   $data =~ s/(-s)(\s+\S|[^\w\s])/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## -s foo
+  $data =~ s/(\Wsub\s+)((?:q|qq|qr|qw|qx|tr|y|s|m)[\s\(\{])/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## sub m {}
+  
+  $data = _fix_div($data) ;
   
   $data =~ s/<%[ \t]*html?(\w+)[ \t]*>(?:(\(.*?\))|)/CLASS_HPLOO_HTML('$1',$2)/sgi ;
   
@@ -370,6 +395,58 @@ sub filter_html_blocks {
   }
 
   $_ = $SYNTAX = $data ;
+}
+
+############
+# _FIX_DIV #
+############
+
+sub _fix_div {
+  my ( $data ) = @_ ;
+  
+  my ($data_ok , $init , $p) ;
+  
+  my $re = qr/
+  (?:
+    [^\/\\]?\/
+  |
+    (?:
+      (?:\\\/)
+    |
+      [^\/]
+    )+
+    (?!\\)
+    [^\/]?\/
+  )
+  /sx ;
+
+  while( $data =~ /(.*?)\/(.*)/gs ) {
+    $init = $1 ;
+    $data = $2 ;
+    
+    $p = pos($data) ;
+    
+    if ( $init =~ /(?:^|\W)(?:tr|s|y)\s*$/s ) {
+      my ($patern,$rest) = ( $data =~ /^($re$re)(.*)/s ) ;
+      $data_ok .= "$init/$patern" ;
+      $data = $rest ;
+    }
+    elsif ( $init =~ /(?:^|\W)(?:q|qq|qr|qw|qx|m)\s*$/s || $init =~ /(?:[=!]~|\()\s*$/s ) {
+      my ($patern,$rest) = ( $data =~ /^($re)(.*)/s ) ;
+      $data_ok .= "$init/$patern" ;
+      $data = $rest ;
+    }
+    elsif ( $data =~ /^=/s ) {
+      $data_ok .= "$init/" ;
+    }
+    else {
+      $data_ok .= "$init\_CLASS_HPLOO_\/DIV_FIX_/" ;
+    }
+  }
+  
+  $data_ok .= substr($data , $p) ;
+
+  return $data_ok ;
 }
 
 ###############
@@ -415,7 +492,20 @@ sub parse_class {
   my $syntax ;
   my ( $init , $class ) ;
 
-  while( $data =~ /^(.*?\W|)(class\s+[\w\.:]+(?:\s+extends\s*[^\{\}]*)?)\s*(\{.*)$/gs ) {
+  while( $data =~ /^
+    (.*?\W|)
+    (
+      [cC]lass\s+
+      [\w\.:]+
+      (?:
+        \s*\[[ \t\w\.-]+\]
+      )?
+      (?:
+        \s+[eE]xtends\s*[^\{\}]*
+      )?
+    )
+    \s*(\{.*)
+  $/gsx ) {
     $init = $1 ;
     $class = $2 ;
     $data = $3 ;
@@ -462,7 +552,9 @@ sub extract_block {
     if ($level <= 0) { last ;}
   }
 
-  die("Missing right curly or square bracket at data:\n$_[0]") if $level != 0 ;
+  if ( $level != 0 ) {
+    die("Missing right curly or square bracket at data:\n$_[0]") if !$DUMP ;
+  }
   
   my ($end) = ( $data =~ /\G(.*)$/s ) ;
   
@@ -494,7 +586,29 @@ sub build_class {
   my $code = shift ;
   my $class ;
   
-  my ($name,$extends,$body) = ( $code =~ /class\s+([\w\.:]+)(?:\s+extends\s+([\w\.:]+(?:\s*,\s*[\w\.:]+)*)\s*|\s+extends|)\s*{(.*)$/s );
+  my ($name,$version,$extends,$body) = ( $code =~ /
+    class\s+
+    ([\w\.:]+)
+    (?:
+      \s*\[[ \t]*([ \t\w\.-]+?)[ \t]*\]
+    |)
+    (?:
+      \s+extends\s+
+      (
+        [\w\.:]+
+        (?:
+          \s*,\s*[\w\.:]+
+        )*
+      )
+      \s*
+    |
+      \s+extends
+    |)
+    \s*{(.*)
+  $/six ) ;
+  
+  $version =~ s/["'\s]//gs ;
+  
   $body =~ s/}\s*$//s ;
   
   $name =~ s/^\./$PREV_CLASS_NAME\::/gs ;
@@ -510,6 +624,10 @@ sub build_class {
     $extends = "use vars qw(\@ISA) ; push(\@ISA , qw(". join(' ',@extends) ." UNIVERSAL)) ;" ;
   }
   else { $extends = '' ;}
+  
+  if ( $version ) {
+    $version = "use vars qw(\$VERSION) ; \$VERSION = '$version' ;" ;
+  }
   
   my ($name_end) = ( $name =~ /(\w+)$/ );
   
@@ -588,7 +706,14 @@ sub build_class {
     $sub_attr = format_nice_sub($sub_attr) if $sub_attr ;
   
     $class .= "{ package $name ;\n" ;
-    $class .= "\n${FIRST_SUB_IDENT}use strict qw(vars) ;\n" ;
+    $class .= "\n${FIRST_SUB_IDENT}use strict qw(vars) ; no warnings ;\n" ;
+    
+    ##$class .= "\n${FIRST_SUB_IDENT}use vars qw(\$VERSION) ;\n${FIRST_SUB_IDENT}$VERSION = '$version' ;\n" if $version ;
+    
+    if ( $version ) {
+      $version =~ s/;\s+/;\n$FIRST_SUB_IDENT/ ;
+      $class .= "\n${FIRST_SUB_IDENT}$version\n" ;
+    }
     
     $class .= "\n$FIRST_SUB_IDENT$extends\n" if $extends ;
 
@@ -601,7 +726,7 @@ sub build_class {
     $class .= "\n$sub_attr\n" if $sub_attr ;
   }
   else {
-    $class .= "{ package $name ; use strict qw(vars) ;$extends$local_vars$new$sub_html_eval$sub_attr\n" ;
+    $class .= "{ package $name ; use strict qw(vars) ; no warnings ;$version$extends$local_vars$new$sub_html_eval$sub_attr\n" ;
     $body =~ s/^(?:\r\n?|\n)//s ;
   }
   
@@ -670,6 +795,8 @@ sub parse_subs {
 sub build_sub {
   my $code = shift ;
   my $sub ;
+  
+  $code =~ s/\r\n?/\n/gs ;
   
   my ($name,$prototype,$body) = ( $code =~ /sub\s+([\w\.:]+)\s*((?:\(.*?\))?)\s*{(.*)/s );
   $body =~ s/}\s*$//s ;
@@ -945,6 +1072,19 @@ Return UNDEF (a constant of the class) makes the creation of the object return I
 
 Use DESTROY() like a normal Perl package.
 
+=head1 Class VERSION
+
+From Class::HPLOO 0.12, you can define the class version in it's declaration:
+
+  class Foo [0.01] extends bar , baz {
+   ...
+  }
+
+This is just a replacement of the original Perl syntax:
+
+  use vars qw($VERSION) ;
+  $VERSION = '0.01' ;
+
 =head1 ATTRIBUTES , GLOBAL VARS & LOCAL VARS
 
 You can use 3 types of definitions for class variables:
@@ -1161,7 +1301,7 @@ Soo, you can write a Perl Module with Class::HPLOO and release it as a normal I<
 file without need I<Class::HPLOO> installed.
 
 If you have L<ePod> (0.03+) installed you can use ePod to write your documentation.
-For I<.hploo> files the ePod need to be alwasy after __END__.
+For I<.hploo> files the ePod need to be always after __END__.
 
 Note that ePod accepts POD syntax too, soo you still can use normal POD for documentation.
 
