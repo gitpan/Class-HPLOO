@@ -18,9 +18,9 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.05';
+$VERSION = '0.06';
 
-my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
+my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
 my (%CACHE , $LOADED) ;
 
@@ -88,12 +88,12 @@ if (!$LOADED) {
 sub import {
   my $class = shift ;
   
-  ($SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
+  ($SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
 
   my $args = join(" ", @_) ;
   
-  if ( $args =~ /build/i) { $args =~ s/(?:build|dump|nice)//gsi ; $BUILD = 1 ;}
-  elsif    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ;}
+  if ( $args =~ /build/i) { $args =~ s/(?:build|dump|nice)//gsi ; $BUILD = 1 ; $NICE = 1 ;}
+  elsif    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ; $NICE = 1 ;}
   
   if ( $args =~ /all[_\s]*oo/i) { $SUB_OO = $SUB_ALL_OO ; $ALL_OO = 1 ;}
   else { $SUB_OO = $SUB_AUTO_OO ;}
@@ -384,21 +384,34 @@ sub build_class {
   
   my $sub_html_eval = $SUB_HTML_EVAL if $ADD_HTML_EVAL ;
   
+  my $local_vars = '%CLASS_HPLOO_HTML' if $SUB_HTML_EVAL ;
+  if ( !$ALL_OO ) {
+    $local_vars .= ' , ' if $local_vars ;
+    $local_vars .= '$this' ;
+  }
+  
+  if ( $local_vars ) { $local_vars = "my ($local_vars) ;" ;}
+  
   my $class ;
   
-  if ( $ALL_OO || $BUILD ) {
+  if ( $NICE || $BUILD ) {
     $new = format_nice_sub($new) ;
 
     $sub_html_eval = format_nice_sub($sub_html_eval) if $sub_html_eval ;
   
     $class .= "{ package $name ;\n" ;
     $class .= "\n${FIRST_SUB_IDENT}use strict qw(vars) ;\n" ;
+    
     $class .= "\n$FIRST_SUB_IDENT$extends\n" if $extends ;
+
+    $class .= "\n$FIRST_SUB_IDENT$local_vars\n" if $local_vars ;
+    
     $class .= "$new\n" ;
+    
     $class .= "\n$sub_html_eval\n" if $sub_html_eval ;
   }
   else {
-    $class .= "{ package $name ; use strict qw(vars) ;$extends my (%CLASS_HPLOO_HTML , \$this) ; $new$sub_html_eval\n" ;
+    $class .= "{ package $name ; use strict qw(vars) ;$extends$local_vars$new$sub_html_eval\n" ;
     $body =~ s/^(?:\r\n?|\n)//s ;
   }
   
@@ -481,7 +494,7 @@ sub build_sub {
     
   my $my_code = $SUB_OO . $my_args ;
   
-  if ( $ALL_OO || $BUILD ) {
+  if ( $NICE || $BUILD ) {
     my ($n,$ident) = ( $body =~ /(\r\n?|\n)([ \t]+)/s );
     $my_code =~ s/(\s*;)\s*/$1$n$ident/gs ;
     $my_code =~ s/^(\s*)/$1$n$ident/gs ;
@@ -655,6 +668,8 @@ Class::HPLOO - Easier way to declare classes on Perl, based in the popular class
 This is the implemantation of OO-Classes for HPL. This bring a easy way to create PM classes, but with HPL resources/style.
 
 =head1 USAGE
+
+  use Class::HPLOO ;
 
   class Foo extends Bar , Baz {
   
