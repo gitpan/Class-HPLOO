@@ -1,0 +1,9 @@
+Changes
+HPLOO.pm
+MANIFEST
+Makefile.PL
+README
+test.pl
+test/classtest.pm
+test/classtest2.pm
+test/foo.pm

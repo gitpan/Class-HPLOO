@@ -1,0 +1,6 @@
+Revision history for Perl extension Class::HPLOO.
+
+0.01  Tue Sep 30 14:35:04 2003
+	- original version; created by h2xs 1.21 with options
+		-X Class::HPLOO
+
