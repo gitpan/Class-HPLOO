@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.15';
+$VERSION = '0.16';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -69,11 +69,14 @@ if (!$LOADED) {
       
       my $ret_this = defined &%CLASS% ? $this->%CLASS%(@_) : undef ;
       
-      if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) { $this = $ret_this ;}
-      elsif ( $ret_this == $undef ) { $this = undef ;}
+      if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) { $this = $ret_this }
+      elsif ( $ret_this == $undef ) { $this = undef }
 
       return $this ;
     }
+    
+    sub CLASS_HPLOO_TIE_KEYS ;
+
   ` . $CLASS_EXTRAS ;
   
   $CLASS_NEW_ATTR = q`
@@ -92,26 +95,28 @@ if (!$LOADED) {
       my $undef = \'' ;
       sub UNDEF {$undef} ;
       
-      if ( $CLASS_HPLOO{ATTR} ) {
-        foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
-          tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $this , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
-        }
-      }
+      if ( $CLASS_HPLOO{ATTR} ) { CLASS_HPLOO_TIE_KEYS($this) }
       
       my $ret_this = defined &%CLASS% ? $this->%CLASS%(@_) : undef ;
       
       if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) {
         $this = $ret_this ;
-        if ( $CLASS_HPLOO{ATTR} && UNIVERSAL::isa($this,'HASH') ) {
-          foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
-            tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $this , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
-          }
-        }
+        if ( $CLASS_HPLOO{ATTR} && UNIVERSAL::isa($this,'HASH') ) { CLASS_HPLOO_TIE_KEYS($this) }
       }
-      elsif ( $ret_this == $undef ) { $this = undef ;}
+      elsif ( $ret_this == $undef ) { $this = undef }
 
       return $this ;
     }
+    
+    sub CLASS_HPLOO_TIE_KEYS {
+      my $this = shift ;
+      if ( $CLASS_HPLOO{ATTR} ) {
+        foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
+          tie( $this->{$Key} => '%PACKAGE%::HPLOO_TIESCALAR' , $this , $Key , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} , \$this->{CLASS_HPLOO_CHANGED} , %PACKAGE% ) if !exists $this->{$Key} ;
+        }
+      }
+    }
+    
   ` . $CLASS_EXTRAS ;
   
   $SUB_AUTO_OO = q`
@@ -119,14 +124,14 @@ if (!$LOADED) {
   
     $CLASS_HPLOO = $this if defined $this ;
     my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO ;
-    $CLASS = ref($this) || __PACKAGE__ ;
+    my $CLASS = ref($this) || __PACKAGE__ ;
   
     $CLASS_HPLOO = undef ;
   ` ;  
   
   $SUB_ALL_OO = q`
     my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : undef ;
-    $CLASS = ref($this) || __PACKAGE__ ;
+    my $CLASS = ref($this) || __PACKAGE__ ;
   ` ;
   
   $SUB_HTML_EVAL = q~
@@ -139,6 +144,9 @@ if (!$LOADED) {
   ~ ;
   
   $SUB_ATTR = q`
+  
+  sub GET_CLASS_HPLOO_HASH { return \%CLASS_HPLOO } ;
+  
   sub CLASS_HPLOO_ATTR {
     my @attrs = split(/\s*,\s*/ , $_[0]) ;
 
@@ -158,8 +166,10 @@ if (!$LOADED) {
       
       my $parse_ref = $type =~ /^(?:array|hash)/ ? 1 : 0 ;
       
+      push(@{ $CLASS_HPLOO{ATTR_ORDER} } , $name) if !$CLASS_HPLOO{ATTR}{$name} ;
+      
       $CLASS_HPLOO{ATTR}{$name}{tp} = $type ;
-      $CLASS_HPLOO{ATTR}{$name}{pr} = $parse_ref ;      
+      $CLASS_HPLOO{ATTR}{$name}{pr} = $parse_ref ;
 
       my $return ;
 
@@ -183,8 +193,10 @@ if (!$LOADED) {
       sub set_$name {
         my \$this = shift ;
         if ( !defined \$this->{$name} ) {
-          tie( \$this->{$name} => 'Class::HPLOO::TIESCALAR' , \$this , '$type' , $parse_ref , \\\\\\$this->{CLASS_HPLOO_ATTR}{$name} ) ;
+          tie( \$this->{$name} => '%PACKAGE%::HPLOO_TIESCALAR' , \$this , '$name' , '$type' , $parse_ref , \\\\\\$this->{CLASS_HPLOO_ATTR}{$name} , \\\\\\$this->{CLASS_HPLOO_CHANGED} , %PACKAGE% ) ;
         }
+        
+        \$this->{CLASS_HPLOO_CHANGED}{$name} = 1 ;
         \$this->{CLASS_HPLOO_ATTR}{$name} = CLASS_HPLOO_ATTR_TYPE('$type',\@_) ;
       }
       ~) if !defined &{"set_$name"} ;
@@ -198,11 +210,11 @@ if (!$LOADED) {
     }
   }
   
-  { package Class::HPLOO::TIESCALAR ;
+  { package %PACKAGE%::HPLOO_TIESCALAR ;
     sub TIESCALAR {
       shift ;
       my $obj = shift ;
-      my $this = bless( { tp => $_[0] , pr => $_[1] , rf => $_[2] , pk => scalar caller } , __PACKAGE__ ) ;
+      my $this = bless( { nm => $_[0] , tp => $_[1] , pr => $_[2] , rf => $_[3] , rfcg => $_[4] , pk => ($_[5] || scalar caller) } , __PACKAGE__ ) ;
             
       if ( $this->{tp} =~ /^sub_(\w+)$/ ) {
         if ( !ref($CLASS_HPLOO{OBJ_TBL}) ) {
@@ -211,7 +223,7 @@ if (!$LOADED) {
             $CLASS_HPLOO{OBJ_TBL} = {} ;
             tie( %{$CLASS_HPLOO{OBJ_TBL}} , 'Hash::NoRef') ;
           }
-          else { $@ = undef ;}
+          else { $@ = undef }
         }
 
         $CLASS_HPLOO{OBJ_TBL}{ ++$CLASS_HPLOO{OBJ_TBL}{x} } = $obj ;
@@ -224,6 +236,13 @@ if (!$LOADED) {
     sub STORE {
       my $this = shift ;
       my $ref = $this->{rf} ;
+      my $ref_changed = $this->{rfcg} ;
+
+      if ( $ref_changed ) {
+        if ( ref $$ref_changed ne 'HASH' ) { $$ref_changed = {} }
+        $$ref_changed->{$this->{nm}} = 1 ;
+      }
+
       $$ref = &{"$this->{pk}::CLASS_HPLOO_ATTR_TYPE"}( $this->{tp} , @_) ;
     }
     
@@ -243,7 +262,7 @@ if (!$LOADED) {
             ref($$ref) eq 'HASH' ? %{$$ref} :
             $$ref
         }
-        else { return $$ref ;}
+        else { return $$ref }
       }
       return undef ;
     }
@@ -255,7 +274,7 @@ if (!$LOADED) {
   sub CLASS_HPLOO_ATTR_TYPE {
     my $type = shift ;
     
-    if ($type eq 'any') { return $_[0] ;}
+    if ($type eq 'any') { return $_[0] }
     elsif ($type eq 'string') {
       return "$_[0]" ;
     }
@@ -385,10 +404,11 @@ sub dump_code {
   
   $_ =~ s/_CLASS_HPLOO_FIXER_//gs ;
   $_ =~ s/_CLASS_HPLOO_\/DIV_FIX_//gs ;  
+  $_ =~ s/_CLASS_HPLOO_DIV_FIX/\//gs ;
 
-  if ( $DUMP || $BUILD ) {
+  #if ( $DUMP || $BUILD ) {
     $_ =~ s/#_CLASS_HPLOO_CMT_(\d+)#/$COMMENTS{$1}/gs if %COMMENTS ;
-  }
+  #}
 
   %COMMENTS = () ;
 
@@ -498,6 +518,8 @@ sub _fix_div {
   (?:
     [^\/\\]?\/
   |
+    (?:\\\\|\\\/)\/
+  |
     (?:
       (?:\\\/)
     |
@@ -507,6 +529,8 @@ sub _fix_div {
     [^\/]?\/
   )
   /sx ;
+
+  $data =~ s/\r\n?/\n/gs ;
 
   while( $data =~ /(.*?)\/(.*)/gs ) {
     $init = $1 ;
@@ -525,7 +549,7 @@ sub _fix_div {
       $data = $rest ;
     }
     elsif ( $data =~ /^=/s ) {
-      $data_ok .= "$init/" ;
+      $data_ok .= "$init\_CLASS_HPLOO_DIV_FIX" ;
     }
     else {
       $data_ok .= "$init\_CLASS_HPLOO_\/DIV_FIX_/" ;
@@ -656,7 +680,7 @@ sub extract_block {
 sub clean_comments {
   my $data = shift ;
   
-  if ( $DUMP || $BUILD ) {
+  if ( 1 || $DUMP || $BUILD ) {
     $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#\$])(#+[^\r\n]*))/++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = (defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
   }
   else {
@@ -761,6 +785,7 @@ sub build_class {
   
   my $new = $add_attr ? $CLASS_NEW_ATTR : $CLASS_NEW ;
   $new =~ s/%CLASS%/$name_end/gs ;
+  $new =~ s/%PACKAGE%/$name/gs ;
   
   ##################
   
@@ -778,6 +803,7 @@ sub build_class {
   $body =~ s/^[ \t]*\n//gs ;
   
   my $sub_attr = $add_attr ? $SUB_ATTR : undef ;
+  $sub_attr =~ s/%PACKAGE%/$name/gs ;
   
   my $sub_html_eval = $ADD_HTML_EVAL ? $SUB_HTML_EVAL : undef ;
   
@@ -1347,6 +1373,45 @@ This are just variables with private access (only accessed by the scope defined 
 
 B<** Note that a local variable is just a normal Perl variable accessed only through it's scope.>
 
+=head1 Persistence with HDB::Object
+
+From Class::HPLOO/0.16 we can use L<HDB::Object> as a base class for persitence.
+
+Example of class built with it:
+
+  use Class::HPLOO ;
+  
+  class User extends HDB::Object {
+  
+    use HDB::Object ;
+  
+    attr( user , pass , name , int age ) ;
+    
+    sub User( $user , $pass , $name , $age ) {
+      $this->{user} = $user ;
+      $this->{pass} = $pass ;
+      $this->{name} = $name ;
+      $this->{age} = time ;
+    }
+  
+  }
+
+When you create the object it will be automatically stored in the HDB database:
+
+  my $user = new User('joe' , '123' , 'Joe Smith' , 30) ;
+  ...
+  $user = undef ; ## Destroy and automatically save (insert into table User).
+  
+
+To load an already stored object you should use the method I<load()>:
+
+  my $user = load User("user eq 'joe'") ;
+  $user->{age} = 40 ;
+  $user = undef ; ## Destroy and automatically save (update col age).
+
+B<** Note that you don't need to care about the DB, including the creation
+of the table! Is everything automatic.>
+
 =head1 METHODS
 
 All the methods of the classes are declared like a normal sub.
@@ -1418,7 +1483,7 @@ Note that ePod accepts POD syntax too, soo you still can use normal POD for docu
 
 =head1 SEE ALSO
 
-L<Perl6::Classes>, L<HPL>.
+L<Perl6::Classes>, L<HPL>, L<HDB::Object>, L<HDB>.
 
 =head1 AUTHOR
 
