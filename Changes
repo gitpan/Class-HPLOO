@@ -1,5 +1,8 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.19  2004-12-14
+      - Fixed bug of change made on version 0.18 on fixer for q|qq|qr|qw|qx|tr|x|y|s|m.
+
 
 0.18  2004-12-12
       - Fixed some new() recursion bug.

@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.18';
+$VERSION = '0.19';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -621,7 +621,7 @@ sub filter_html_blocks {
     $data =~ s/(-[sx])(\s+\S|[^\w\s])/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## -s foo
     $data =~ s/(\Wsub\s+)((?:q|qq|qr|qw|qx|tr|x|y|s|m)[\s\(\{])/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## sub m {}
   
-    $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\W)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## txt y = | (x-y)
+    $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\s*[=,\)\}\]\>\*])/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## txt y = | (x-y)
   }
   
   $data = _fix_div($data) ;
