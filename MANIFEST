@@ -6,6 +6,7 @@ test.pl
 lib/Class/HPLOO.pm
 lib/Class/HPLOO/Base.pm
 lib/Class/HPLOO/Build.pm
+lib/Class/HPLOO/InlineC.pm
 lib/Class/HPLOO/MakeMaker.pm
 script/build-hploo
 test/attr.pm
@@ -14,3 +15,4 @@ test/classtest2.pm
 test/foo.pm
 test/testsuper.pm
 
+META.yml                                 Module meta-data (added by MakeMaker)

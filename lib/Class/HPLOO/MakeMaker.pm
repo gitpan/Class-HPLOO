@@ -45,10 +45,13 @@ our @EXPORT_OK = @EXPORT ;
 
 sub WriteMakefile {
 
-  Class::HPLOO::Build::build("-r") ;
-
   if ( $USE_INLINE ) {
     my ( %args ) = @_ ;
+    
+    my $ver = -s $args{VERSION_FROM} ? ExtUtils::MM_Unix::parse_version('MM' , $args{VERSION_FROM} ) : undef ;
+    
+    Class::HPLOO::Build::build([$ver],"-r") ;
+    
     $args{clean} ||= { FILES=>q[_Inline *.inl] } ;
 
     Inline::MakeMaker::WriteMakefile(%args) ;
@@ -67,6 +70,7 @@ sub WriteMakefile {
     }
   }
   else {
+    Class::HPLOO::Build::build("-r") ;
     ExtUtils::MakeMaker::WriteMakefile(@_) ;
   }
 

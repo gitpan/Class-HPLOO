@@ -33,6 +33,7 @@ use Class::HPLOO qw(donothing) ;
 #########
 
 sub build {
+  my $ARGS_REF = ref $_[0] ? shift(@_) : [] ;
   my @ARGV = @_ ;
   
   ## HELP
@@ -57,7 +58,7 @@ BUILD RECURSIVETY FROM A PATH:
   ** Note that only .hploo files older than
      it's .pm files will be built.
 
-(C) Copyright 2000-2004, Graciliano M. P. <gm\@virtuasites.com.br>
+(C) Copyright 2000-2004, Graciliano M. P. <gmpassos\@cpan.org>
 ____________________________________________________________________
 `;
 
@@ -101,7 +102,11 @@ ____________________________________________________________________
   
   die ("File $pm_file already exists! Can't replace it.") if ( !$replace && -s $pm_file ) ;
   
-  my $code = Class::HPLOO::build_hploo($hploo_file , $pm_file) ;
+  my %inc = %INC ;
+  
+  my $code = Class::HPLOO::build_hploo($hploo_file , $pm_file , $$ARGS_REF[0]) ;
+  
+  %INC = %inc ;
   
   print "$hploo_file [OK] (converted to $pm_file).\n" ;
 

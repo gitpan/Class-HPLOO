@@ -1,5 +1,9 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.22  2005-03-07
+      - Added pseudo syntax for easier way to work with SV* from sub[C] functions.
+
+
 0.21  2004-12-16
       - Added Inline::MakeMaker support for inline functions.
 

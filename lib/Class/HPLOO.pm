@@ -18,9 +18,9 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.21';
+$VERSION = '0.22';
 
-my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
+my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $BUILD_PM_FILE , $BUILD_PM_VERSION , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
 my (%CACHE , $LOADED) ;
 
@@ -517,10 +517,12 @@ if (!$LOADED) {
 # IMPORT #
 ##########
 
+my %BUILDING ;
+
 sub import {
   my $class = shift ;
   
-  ($SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
+  ($SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $BUILD_PM_FILE , $BUILD_PM_VERSION , $USE_BASE , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
 
   my $args = join(" ", @_) ;
   
@@ -537,6 +539,23 @@ sub import {
   if ( $args =~ /no[_\s]*clean[_\s]*arg/i) { $NO_CLEAN_ARGS = 1 ;}
   
   if ( $args =~ /do\s*nothing/i ) { $DO_NOTHING = 1 ;}
+  
+  if ( $BUILD ) {
+    unshift (@INC, sub {
+      my @call = caller ;
+      
+      if ( $BUILDING{ $call[1] } ) {
+        my $fh ;
+        open ($fh, $BUILD_PM_FILE ) ;
+        return $fh ;
+      }
+ 
+      undef ;
+    }) if !%BUILDING ;
+   
+    my @call = caller ;
+    $BUILDING{ $call[1] } = 1 ;
+  }
 
 }
 
@@ -603,7 +622,9 @@ sub filter_html_blocks {
     $line_init = $call[2] ;
   }
   
-  if ( $_ =~ /(.*)(?:\r\n?|\n)__END__(?:\r\n?|\n).*?$/s ) {
+  $_ =~ s/(?:\r\n?|\n)/\n/gs ;
+  
+  if ( $_ =~ /(.*)\n__END__\n.*?$/s ) {
     $_ = $1 ;
   }
 
@@ -621,7 +642,9 @@ sub filter_html_blocks {
     $data =~ s/(-[sx])(\s+\S|[^\w\s])/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## -s foo
     $data =~ s/(\Wsub\s+)((?:q|qq|qr|qw|qx|tr|x|y|s|m)[\s\(\{])/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## sub m {}
   
-    $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\s*[=,\)\}\]\>\*])/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## txt y = | (x-y)
+    $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|x|y|s|m)\s*[=,\)\}\]\>\*\;\+\-])/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## txt y = | (x-y) | , y ; | (y+1)
+    
+    $data =~ s/(<)(<)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## $x <<= 1 ;
   }
   
   $data = _fix_div($data) ;
@@ -958,7 +981,7 @@ sub build_class {
     $PREV_CLASS_NAME = $prev_class_name ;
   }
   
-  $body = parse_subs($body,$name,$version_number) ;
+  my ($body , $extra_vars) = parse_subs($body,$name,$version_number) ;
   
   $body =~ s/^[ \t]*\n//gs ;
   
@@ -972,6 +995,8 @@ sub build_class {
   my @local_vars ;
 
   push(@local_vars , '$this') if !$ALL_OO ;
+  
+  push(@local_vars , @$extra_vars) if ref $extra_vars && @$extra_vars ;
 
   my $local_vars ;
   if ( @local_vars ) { $local_vars = "my (". join(' , ', @local_vars) .") ;" ;}
@@ -1085,6 +1110,10 @@ sub parse_subs {
   while( $data =~ /^
     (.*?\W|)
     (
+      (?:
+        (?:static)
+        \s+
+      )?
       sub\s+[\w\.:]+\s*
       (?:\(.*?\)|)?
     |
@@ -1115,8 +1144,18 @@ sub parse_subs {
   
   $syntax .= $data ;
   
+  my @extra_vars ;
+  
   foreach my $Key ( sort keys %inline ) {
     #my $src = "use Inline $Key => <<'__INLINE_$Key\_SRC__' , NAME => '$class_name' , VERSION => '$class_version' ;\n\n" ;
+    
+    push(@extra_vars , "\%__${Key}__") ;
+    
+    my $src_header ;
+    eval("require Class::HPLOO::Inline$Key") ;
+    if (!$@) {
+      $src_header = eval("Class::HPLOO::Inline$Key\::code_header()") ;
+    }
     
     my $src = q`
 my $INLINE_INSTALL ;
@@ -1125,6 +1164,14 @@ BEGIN {
   my @installs = ($Config{installarchlib} , $Config{installprivlib} , $Config{installsitelib}) ;
   foreach my $i ( @installs ) { $i =~ s/[\\\\\/]/\//gs ;}
   $INLINE_INSTALL = 1 if ( __FILE__ =~ /\.pm$/ && ( join(" ",@INC) =~ /\Wblib\W/s || __FILE__ =~ /^(?:\Q$installs[0]\E|\Q$installs[1]\E|\Q$installs[2]\E)/ ) ) ;
+
+` . qq`
+
+  my \$config = 'use Inline $Key => Config' ;
+  foreach my \$k (sort keys \%__${Key}__ ) {
+    \$config .= " => '\$k' => \\\$__${Key}__{'\$k'}" ;
+  }
+  eval(\$config) ;
 }
 `;
 
@@ -1132,16 +1179,19 @@ BEGIN {
     $src =~ s/\s+$//s ;
     $src =~ s/\s+/ /gs ;
     $src .= "\n\n" ;
+    
+    my $pm_ver = $BUILD_PM_VERSION || $class_version ;
 
-    $src .= qq`use Inline $Key => <<'__INLINE_$Key\_SRC__' , ( \$INLINE_INSTALL ? (NAME => '$class_name' , VERSION => '$class_version') : () ) ;\n\n` ;
+    $src .= qq`use Inline $Key => <<'__INLINE_$Key\_SRC__' , ( \$INLINE_INSTALL ? (NAME => '$class_name' , VERSION => '$pm_ver' ) : () ) ;\n\n` ;
 
+    $src .= $src_header ;
     $src .= $inline{$Key} ;
     $src =~ s/\s+$/\n/s ;
     $src .= "\n__INLINE_$Key\_SRC__\n\n" ;
     $syntax .= $src ;
   }
 
-  return $syntax ;
+  return($syntax , \@extra_vars) ;
 }
 
 #############
@@ -1164,25 +1214,37 @@ sub build_sub {
       $$inline{$language} .= $body ;
     }
     else {
+      if ( $language eq 'C' ) {
+        require Class::HPLOO::InlineC ;
+        $body = Class::HPLOO::InlineC::apply_CPL($body) ;
+      }
       my $src = "$header {$body" ;
       $src =~ s/[ \t]*}\s*$/}\n\n/s ;
       $$inline{$language} .= $src ;
     }
   }
   else {
-    my ($name,$prototype,$body) = ( $code =~ /sub\s+([\w\.:]+)\s*((?:\(.*?\))?)\s*{(.*)/s );
+    my ($sub_type,$name,$prototype,$body) = ( $code =~ /^\s*(?:(static)\s+)?sub\s+([\w\.:]+)\s*((?:\(.*?\))?)\s*{(.*)/s );
     $body =~ s/}\s*$//s ;
     
     $name = package_name($name);
     
+    my $no_sub_oo = $sub_type eq 'static' ? 1 : undef ;
+    
     my $my_args ;
     if ( $prototype ) {
-      $my_args = &generate_args_code($prototype) ;
-      if ( $my_args ) { $prototype = '' ;}
-      else { $prototype =~ s/^(\()(.*)$/$1\$$2/gs ;}
+      if ( $prototype =~ /^\(\s*\*\s*\)$/ ) {
+        $no_sub_oo = 1 ;
+        $prototype = '' ;
+      }
+      else {
+        $my_args = &generate_args_code($prototype) ;
+        if ( $my_args ) { $prototype = '' ;}
+        elsif (!$no_sub_oo) { $prototype =~ s/^(\()(.*)$/$1\$$2/gs ;}
+      }
     }
-      
-    my $my_code = $SUB_OO . $my_args ;
+    
+    my $my_code = (!$no_sub_oo ? $SUB_OO : '') . $my_args ;
     
     if ( $NICE || $BUILD ) {
       my ($n,$ident) = ( $body =~ /(\r\n?|\n)([ \t]+)/s );
@@ -1219,17 +1281,20 @@ sub generate_args_code {
   my $my_args ;
 
   if ($args =~ /\(
+    \s*
     (
-      \s*(?:[\$\@\%]|\\[\@\%])\w[\w:]*\s*
+      (?:[\$\@\%]|\\[\@\%])\w[\w:]*\s*
       (?:,\s*(?:[\$\@\%]|\\[\@\%])\w[\w:]*\s*)*
     )
     \s*,?\s*
   \)/sx) {
-    my ($clean_args) ;
-    my @vars = split(/\s*,\s*/s , $1) ;
+    my ($vars , $clean_args) = $1 ;
+    $vars =~ s/^\s+//gs ;
+    $vars =~ s/\s+$//gs ;    
+    my @vars = split(/\s*,\s*/s , $vars) ;
     
     foreach my $vars_i ( @vars ) {
-      my ($ref,$type,$var) = ( $vars_i =~ /(\\?)([\$\@\%])(.*)/gs );
+      my ($ref,$type,$var) = ( $vars_i =~ /(\\?)([\$\@\%])(.*?)\s*$/gs );
       
       if ( $clean_args ) { $my_args .= "my $vars_i ;" ; next ;}
       
@@ -1260,7 +1325,7 @@ sub generate_args_code {
 ###############
 
 sub build_hploo {
-  my ( $hploo_file , $pm_file ) = @_ ;
+  my ( $hploo_file , $pm_file , $pm_version ) = @_ ;
   
   my $file_data ;
   {
@@ -1287,6 +1352,9 @@ sub build_hploo {
   $import_args =~ s/\s+/ /gs ;
   
   $file_init = "use Class::HPLOO qw(build $import_args);\n" . $file_init ;
+  
+  $BUILD_PM_FILE = $pm_file ;
+  $BUILD_PM_VERSION = $pm_version ;  
   
   open (my $fh,">$pm_file") ;
   print $fh $file_init ;
