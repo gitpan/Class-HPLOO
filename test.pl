@@ -1,7 +1,7 @@
 #########################
 
 use Test ;
-BEGIN { plan tests => 1 } ;
+BEGIN { plan tests => 32 } ;
 
 #########################
 {
@@ -94,7 +94,12 @@ BEGIN { plan tests => 1 } ;
   @l = @{ $foo->get_special } ;
   ok( join(" ", @l) , 'wa isa' ) ;
   ok( join(" ", @{$foo->{special}}) , 'wa isa' ) ;
-
+  
+  my $call0 = $foo->call ;
+  my $call1 = $foo->{call} ;
+  
+  ok($call0 , $call1) ;
 }
 #########################
 
+print "By!\n" ;

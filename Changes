@@ -1,5 +1,10 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.13  2004-07-12
+      - Fied handler of comments.
+      - Added support for attr sub.
+
+
 0.12  2004-04-09
       - Added support for version number after class name: class Foo [0.1] {...}
       - Fixed bug with patterns and "/" when used for division.

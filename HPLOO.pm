@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.12';
+$VERSION = '0.13';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -26,7 +26,7 @@ my (%CACHE , $LOADED) ;
 
 ###################################
 
-my (%REF_TYPES , $CLASS_NEW , $SUB_AUTO_OO , $SUB_ALL_OO , $SUB_HTML_EVAL , $SUB_ATTR) ;
+my (%REF_TYPES , $CLASS_NEW , $CLASS_NEW_ATTR , $SUB_AUTO_OO , $SUB_ALL_OO , $SUB_HTML_EVAL , $SUB_ATTR) ;
 
 if (!$LOADED) {
   
@@ -48,9 +48,28 @@ if (!$LOADED) {
       my $undef = \'' ;
       sub UNDEF {$undef} ;
       
+      my $ret_this = defined &%CLASS% ? $this->%CLASS%(@_) : undef ;
+      
+      if ( ref($ret_this) && UNIVERSAL::isa($ret_this,$class) ) { $this = $ret_this ;}
+      elsif ( $ret_this == $undef ) { $this = undef ;}
+
+      return $this ;
+    }
+  ` ;
+  
+  $CLASS_NEW_ATTR = q`
+    sub new {
+      my $class = shift ;
+      my $this = bless({} , $class) ;
+      
+      no warnings ;
+      
+      my $undef = \'' ;
+      sub UNDEF {$undef} ;
+      
       if ( $CLASS_HPLOO{ATTR} ) {
         foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
-          tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
+          tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $this , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
         }
       }
       
@@ -60,7 +79,7 @@ if (!$LOADED) {
         $this = $ret_this ;
         if ( $CLASS_HPLOO{ATTR} && UNIVERSAL::isa($this,'HASH') ) {
           foreach my $Key ( keys %{$CLASS_HPLOO{ATTR}} ) {
-            tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
+            tie( $this->{$Key} => 'Class::HPLOO::TIESCALAR' , $this , $CLASS_HPLOO{ATTR}{$Key}{tp} , $CLASS_HPLOO{ATTR}{$Key}{pr} , \$this->{CLASS_HPLOO_ATTR}{$Key} ) if !exists $this->{$Key} ;
           }
         }
       }
@@ -106,27 +125,39 @@ if (!$LOADED) {
       $type =~ s/(?:^|\s*)int$/integer/gs ;
       $type =~ s/(?:^|\s*)float$/floating/gs ;
       $type =~ s/(?:^|\s*)str$/string/gs ;
+      $type =~ s/(?:^|\s*)sub$/sub_$name/gs ;
       $type =~ s/\s//gs ;
       
-      $type = 'any' if $type !~ /^(?:(?:ref)|(?:ref)?(?:array|hash)(?:integer|floating|string|any|&\w+)|(?:ref)?(?:array|hash)|(?:array|hash)?(?:integer|floating|string|any|&\w+))$/ ;
+      $type = 'any' if $type !~ /^(?:(?:ref)|(?:ref)?(?:array|hash)(?:integer|floating|string|sub_\w+|any|&\w+)|(?:ref)?(?:array|hash)|(?:array|hash)?(?:integer|floating|string|sub_\w+|any|&\w+))$/ ;
       
       my $parse_ref = $type =~ /^(?:array|hash)/ ? 1 : 0 ;
       
       $CLASS_HPLOO{ATTR}{$name}{tp} = $type ;
       $CLASS_HPLOO{ATTR}{$name}{pr} = $parse_ref ;      
 
-      my $return = $parse_ref ? qq~
+      my $return ;
+
+      if ( $type =~ /^sub_(\w+)$/ ) {
+        my $sub = $1 ;
+        $return = qq~
+          return (&$sub(\$this,\@_))[0] if defined &$sub ;
+          return undef ;
+        ~ ;
+      }
+      else {
+         $return = $parse_ref ? qq~
                      ref(\$this->{CLASS_HPLOO_ATTR}{$name}) eq 'ARRAY' ? \@{\$this->{CLASS_HPLOO_ATTR}{$name}} :
                      ref(\$this->{CLASS_HPLOO_ATTR}{$name}) eq 'HASH' ? \%{\$this->{CLASS_HPLOO_ATTR}{$name}} :
                      \$this->{CLASS_HPLOO_ATTR}{$name}
                    ~ :
                    "\$this->{CLASS_HPLOO_ATTR}{$name}" ;
+      }
 
       eval(qq~
       sub set_$name {
         my \$this = shift ;
         if ( !defined \$this->{$name} ) {
-          tie( \$this->{$name} => 'Class::HPLOO::TIESCALAR' , '$type' , $parse_ref , \\\\\\$this->{CLASS_HPLOO_ATTR}{$name} ) ;
+          tie( \$this->{$name} => 'Class::HPLOO::TIESCALAR' , \$this , '$type' , $parse_ref , \\\\\\$this->{CLASS_HPLOO_ATTR}{$name} ) ;
         }
         \$this->{CLASS_HPLOO_ATTR}{$name} = CLASS_HPLOO_ATTR_TYPE('$type',\@_) ;
       }
@@ -144,7 +175,24 @@ if (!$LOADED) {
   { package Class::HPLOO::TIESCALAR ;
     sub TIESCALAR {
       shift ;
-      return bless( { tp => $_[0] , pr => $_[1] , rf => $_[2] , pk => scalar caller } , __PACKAGE__ ) ;
+      my $obj = shift ;
+      my $this = bless( { tp => $_[0] , pr => $_[1] , rf => $_[2] , pk => scalar caller } , __PACKAGE__ ) ;
+            
+      if ( $this->{tp} =~ /^sub_(\w+)$/ ) {
+        if ( !ref($CLASS_HPLOO{OBJ_TBL}) ) {
+          eval { require Hash::NoRef } ;
+          if ( !$@ ) {
+            $CLASS_HPLOO{OBJ_TBL} = {} ;
+            tie( %{$CLASS_HPLOO{OBJ_TBL}} , 'Hash::NoRef') ;
+          }
+          else { $@ = undef ;}
+        }
+
+        $CLASS_HPLOO{OBJ_TBL}{ ++$CLASS_HPLOO{OBJ_TBL}{x} } = $obj ;
+        $this->{oid} = $CLASS_HPLOO{OBJ_TBL}{x} ;
+      }
+
+      return $this ;
     }
     
     sub STORE {
@@ -156,13 +204,22 @@ if (!$LOADED) {
     sub FETCH {
       my $this = shift ;
       my $ref = $this->{rf} ;
-      if ( $this->{pr} ) {
-        return
-          ref($$ref) eq 'ARRAY' ? @{$$ref} :
-          ref($$ref) eq 'HASH' ? %{$$ref} :
-          $$ref
+      
+      if ( $this->{tp} =~ /^sub_(\w+)$/ ) {
+        my $sub = $this->{pk} . '::' . $1 ;
+        my $obj = $CLASS_HPLOO{OBJ_TBL}{ $this->{oid} } ;
+        return (&$sub($obj,@_))[0] if defined &$sub ;
       }
-      else { return $$ref ;}
+      else {
+        if ( $this->{pr} ) {
+          return
+            ref($$ref) eq 'ARRAY' ? @{$$ref} :
+            ref($$ref) eq 'HASH' ? %{$$ref} :
+            $$ref
+        }
+        else { return $$ref ;}
+      }
+      return undef ;
     }
     
     sub UNTIE {}
@@ -191,6 +248,10 @@ if (!$LOADED) {
         $val .= '.0' ;
       }
       return $val ;
+    }
+    elsif ($type =~ /^sub_(\w+)$/) {
+      my $sub = $1 ;
+      return (&$sub(@_))[0] if defined &$sub ;
     }
     elsif ($type =~ /^&(\w+)$/) {
       my $sub = $1 ;
@@ -247,6 +308,7 @@ if (!$LOADED) {
   ` ;
 
   $CLASS_NEW   =~ s/[ \t]*\n[ \t]*/ /gs ;
+  $CLASS_NEW_ATTR =~ s/[ \t]*\n[ \t]*/ /gs ;
   $SUB_AUTO_OO =~ s/[ \t]*\n[ \t]*/ /gs ;
   $SUB_ALL_OO  =~ s/[ \t]*\n[ \t]*/ /gs ;
   $SUB_HTML_EVAL  =~ s/[ \t]*\n[ \t]*/ /gs ;
@@ -569,10 +631,10 @@ sub clean_comments {
   my $data = shift ;
   
   if ( $DUMP || $BUILD ) {
-    $data =~ s/([\r\n][^\r\n\# \t]*)(#+[^\r\n]*)/ ++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = $2 ; "$1#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
+    $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#])(#+[^\r\n]*))/++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = (defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
   }
   else {
-    $data =~ s/([\r\n][^\r\n\# \t]*)(#+[^\r\n]*)/ my $s = ' ' x length($2) ; "$1$s"/gse ;
+    $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#])(#+[^\r\n]*))/ my $s = ' ' x length(defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "$s" /gse ;
   }
 
   return $data ;
@@ -623,16 +685,15 @@ sub build_class {
   if ( @extends ) {
     $extends = "use vars qw(\@ISA) ; push(\@ISA , qw(". join(' ',@extends) ." UNIVERSAL)) ;" ;
   }
-  else { $extends = '' ;}
-  
+  else {
+    $extends = "use vars qw(\@ISA) ; \@ISA = qw(UNIVERSAL) ;" ;
+  }
+
   if ( $version ) {
     $version = "use vars qw(\$VERSION) ; \$VERSION = '$version' ;" ;
   }
   
   my ($name_end) = ( $name =~ /(\w+)$/ );
-  
-  my $new = $CLASS_NEW ;
-  $new =~ s/%CLASS%/$name_end/gs ;
   
   ## vars () ;
   $body =~ s~
@@ -671,6 +732,9 @@ sub build_class {
       "${1}CLASS_HPLOO_ATTR('$2')" 
     ~gsex ;
   }
+  
+  my $new = $add_attr ? $CLASS_NEW_ATTR : $CLASS_NEW ;
+  $new =~ s/%CLASS%/$name_end/gs ;
   
   ##################
   
@@ -1101,7 +1165,7 @@ To set an attribute you use:
 
 To define:
 
-  attr( type name , ref type name , array name , hash name )
+  attr( type name , ref type name , array name , hash name , sub id )
 
 To set:
 
@@ -1151,6 +1215,23 @@ An integer that accepts only I<[0-9]> digits.
 =item floating | float
 
 A floating point, with the format I</\d+\.\d+/>. If  I</\.\d+$/> doesn't exists B<I<'.0'>> will be added in the end.
+
+=item sub
+
+Define an attribute as a sub call:
+
+  class foo {
+    attr( sub id ) ;
+  
+    sub id() { return 123 ; }
+  }
+  
+  ## call:
+  
+  $foo->id() ;
+  ## or
+  print " $foo->{id} \n" ;
+
 
 =back
 
