@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.14';
+$VERSION = '0.15';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -38,9 +38,28 @@ if (!$LOADED) {
   '*' => 'GLOB' ,
   ) ;
   
+  my $CLASS_EXTRAS = q`
+    sub SUPER {
+      my ($pack , undef , undef , $sub0) = caller(1) ;
+      unshift(@_ , $pack) if ( (!ref($_[0]) && $_[0] ne $pack) || (ref($_[0]) && !UNIVERSAL::isa($_[0] , $pack)) ) ;
+      my $sub = $sub0 ;
+      $sub =~ s/.*?(\w+)$/$1/ ;
+      $sub = 'new' if $sub0 =~ /(?:^|::)$sub::$sub$/ ;
+      $sub = "SUPER::$sub" ;
+      $_[0]->$sub(@_[1..$#_]) ;
+    }
+  `;
+  
   $CLASS_NEW = q`
     sub new {
+      if ( !defined &%CLASS% && @ISA > 1 ) {
+        foreach my $ISA_i ( @ISA ) {
+          return &{"$ISA_i\::new"}(@_) if defined &{"$ISA_i\::new"} ;
+        }
+      }
+
       my $class = shift ;
+            
       my $this = bless({} , $class) ;
       
       no warnings ;
@@ -55,10 +74,16 @@ if (!$LOADED) {
 
       return $this ;
     }
-  ` ;
+  ` . $CLASS_EXTRAS ;
   
   $CLASS_NEW_ATTR = q`
     sub new {
+      if ( !defined &%CLASS% && @ISA > 1 ) {
+        foreach my $ISA_i ( @ISA ) {
+          return &{"$ISA_i\::new"}(@_) if defined &{"$ISA_i\::new"} ;
+        }
+      }
+
       my $class = shift ;
       my $this = bless({} , $class) ;
       
@@ -87,20 +112,21 @@ if (!$LOADED) {
 
       return $this ;
     }
-  ` ;
+  ` . $CLASS_EXTRAS ;
   
   $SUB_AUTO_OO = q`
     my $CLASS_HPLOO ;
   
     $CLASS_HPLOO = $this if defined $this ;
     my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO ;
-    my $class = ref($this) || __PACKAGE__ ;
+    $CLASS = ref($this) || __PACKAGE__ ;
   
     $CLASS_HPLOO = undef ;
   ` ;  
   
   $SUB_ALL_OO = q`
     my $this = ref($_[0]) && UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : undef ;
+    $CLASS = ref($this) || __PACKAGE__ ;
   ` ;
   
   $SUB_HTML_EVAL = q~
@@ -762,6 +788,8 @@ sub build_class {
   my $local_vars ;
   if ( @local_vars ) { $local_vars = "my (". join(' , ', @local_vars) .") ;" ;}
   
+  my $const_class = "my \$CLASS = '$name' ; sub __CLASS__ { '$name' } ;" ;
+  
   my $class ;
   
   if ( $NICE || $BUILD ) {
@@ -783,6 +811,8 @@ sub build_class {
 
     $class .= "\n$FIRST_SUB_IDENT$local_vars\n" if $local_vars ;
     
+    $class .= "\n$FIRST_SUB_IDENT$const_class\n" ;
+    
     $class .= "$new\n" ;
     
     $class .= "\n$sub_html_eval\n" if $sub_html_eval ;
@@ -790,7 +820,7 @@ sub build_class {
     $class .= "\n$sub_attr\n" if $sub_attr ;
   }
   else {
-    $class .= "{ package $name ; use strict qw(vars) ; no warnings ;$version$extends$local_vars$new$sub_html_eval$sub_attr\n" ;
+    $class .= "{ package $name ; use strict qw(vars) ; no warnings ;$version$extends$local_vars$const_class$new$sub_html_eval$sub_attr\n" ;
     $body =~ s/^(?:\r\n?|\n)//s ;
   }
   

@@ -1,5 +1,9 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.15  2004-08-28
+      - Added support for the method SUPER(...), like super() in Java.
+      - Added use of SUPER::new() when initializer is not defined in the class.
+
 
 0.14  2004-08-20
       - Fixed comment placeholder when $#_ found.
