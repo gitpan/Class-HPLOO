@@ -1,5 +1,11 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.02  2004-01-16
+      - Now produce better formatted code when using import option "nice" or "dump"
+      - New script nuil-hploo.pl, to convert .hploo files to .pm.
+      - Added support to ePod at the __END__ of a hploo file.
+
+
 0.01  Tue Sep 30 14:35:04 2003
 	- original version; created by h2xs 1.21 with options
 		-X Class::HPLOO

@@ -18,15 +18,15 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 
-my (%HTML , %COMMENTS , $SUB_OO , $LOADED , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $SUB_HTML_EVAL , $ADD_HTML_EVAL) ;
+my (%HTML , %COMMENTS , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT) ;
 
-my (%CACHE , $RET_CACHE) ;
+my (%CACHE , $LOADED) ;
 
 ###################################
 
-my (%REF_TYPES , $CLASS_NEW , $SUB_AUTO_OO , $SUB_ALL_OO) ;
+my (%REF_TYPES , $CLASS_NEW , $SUB_AUTO_OO , $SUB_ALL_OO , $SUB_HTML_EVAL) ;
 
 if (!$LOADED) {
   
@@ -44,18 +44,19 @@ if (!$LOADED) {
       my $this = bless({} , $class) ;
       my $ret_this = $this->%CLASS%(@_) if defined &%CLASS% ;
       $this = $ret_this if ( UNIVERSAL::isa($ret_this,$class) ) ;
+      $this = undef if ( $ret_this eq '0' ) ;
       return $this ;
     }
   ` ;
   
   $SUB_AUTO_OO = q`
-    my %CLASS_HPLOO ;
+    my $CLASS_HPLOO ;
   
-    $CLASS_HPLOO{this} = $this if defined $this ;
-    my $this = UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO{this} ;
+    $CLASS_HPLOO = $this if defined $this ;
+    my $this = UNIVERSAL::isa($_[0],'UNIVERSAL') ? shift : $CLASS_HPLOO ;
     my $class = ref($this) || __PACKAGE__ ;
   
-    %CLASS_HPLOO = () ;
+    $CLASS_HPLOO = undef ;
   ` ;  
   
   $SUB_ALL_OO = q`
@@ -87,21 +88,21 @@ if (!$LOADED) {
 sub import {
   my $class = shift ;
   
+  ($SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT) = () ;
+
   my $args = join(" ", @_) ;
   
-  if ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ;}
+  if    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ;}
+  elsif ( $args =~ /build/i) { $args =~ s/build//gsi ; $BUILD = 1 ;}
   
   if ( $args =~ /all[_\s]*oo/i) { $SUB_OO = $SUB_ALL_OO ; $ALL_OO = 1 ;}
-  else { $SUB_OO = $SUB_AUTO_OO ; $ALL_OO = undef ;}
+  else { $SUB_OO = $SUB_AUTO_OO ;}
   
   if ( $args =~ /dump/i) { $DUMP = 1 ;}
-  else { $DUMP = undef ;}
   
   if ( $args =~ /no[_\s]*clean[_\s]*arg/i) { $NO_CLEAN_ARGS = 1 ;}
-  else { $NO_CLEAN_ARGS = undef ;}
   
-  $RET_CACHE = $ADD_HTML_EVAL = undef ;
-  
+  if ( $args =~ /do\s*nothing/i ) { $DO_NOTHING = 1 ;}
 }
 
 ##########
@@ -115,21 +116,29 @@ FILTER_ONLY( all => \&filter_html_blocks , code => \&CLASS_HPLOO , all => \&dump
 #############
 
 sub dump_code {
-
+  return if $DO_NOTHING ;
+  
   $_ = $CACHE{$_} if $RET_CACHE ;
 
   $_ =~ s/_CLASS_HPLOO_FIXER_//gs ;
 
-  if ( $DUMP ) {
+  if ( $DUMP || $BUILD ) {
     $_ =~ s/#_CLASS_HPLOO_CMT_(\d+)#/$COMMENTS{$1}/gs ;
     %COMMENTS = () ;
-    
-    my $syntax = $_ ;
-    $syntax =~ s/\r\n?/\n/gs ;
-    print "$syntax\n" ;
   }
   else {
     %COMMENTS = () ;
+  }
+
+  if ( $DUMP ) {
+    my $syntax = $_ ;
+    $syntax =~ s/\r\n?/\n/gs ;
+    print "$syntax\n" ;
+    exit;
+  }
+  
+  if ( $BUILD ) {
+    $BUILD = $_ ;
   }
   
   $CACHE{$CACHE{_}} = $_ ;
@@ -146,15 +155,16 @@ sub dump_code {
 ######################
 
 sub filter_html_blocks {
-  return if $_ !~ /\S/s ;
+  return if $DO_NOTHING || $_ !~ /\S/s ;
   
   if ( $CACHE{X} == 50 ) { %CACHE = () ;}
   
   if ( $CACHE{$_} ) { $RET_CACHE = 1 ; return ;}
-  
-  my $data = $CACHE{_} = $_ ;
-  
+
   %COMMENTS = () ;
+  
+  my $data = $CACHE{_} = clean_comments("\n".$_) ;
+    
   %HTML = () ;
   
   $data =~ s/(\$)(q)/$1\_CLASS_HPLOO_FIXER_$2/gs ;
@@ -191,15 +201,13 @@ sub filter_html_blocks {
 ###############
 
 sub CLASS_HPLOO {
-  return if $RET_CACHE || $_ !~ /\S/s ;
+  return if $DO_NOTHING || $RET_CACHE || $_ !~ /\S/s ;
   
   my $data = $_ ;
   
   my (@ph) = ( $data =~ /(\Q$;\E....\Q$;\E)/gs );
   my $phx = -1 ;
   $data =~ s/\Q$;\E....\Q$;\E/"$;HPL_PH". ++$phx ."$;"/egs ;
-  
-  $data = clean_comments($data) ;
   
   my $syntax ;
   
@@ -222,7 +230,7 @@ sub CLASS_HPLOO {
   
   $syntax .= $data ;
   
-  $syntax .= "\n1;\n" ;
+  $syntax .= "\n1;\n" if $syntax !~ /\s*1\s*;\s*$/ ;
 
   $syntax =~ s/(<\?CLASS_HPLOO_HTML_\w+\?>)/$HTML{$1}{1}$HTML{$1}{2}$HTML{$1}{3}$HTML{$1}{4}/gs ;
   $syntax =~ s/\Q$;\EHPL_PH(\d+)\Q$;\E/$ph[$1]/gs ;
@@ -260,7 +268,7 @@ sub extract_block {
 sub clean_comments {
   my $data = shift ;
   
-  if ( $DUMP ) {
+  if ( $DUMP || $BUILD ) {
     $data =~ s/([\r\n][^\r\n\#]*)(#+[^\r\n]*)/ ++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = $2 ; "$1#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
   }
   else {
@@ -321,15 +329,13 @@ sub build_class {
   
   my $class ;
   
-  if ( $ALL_OO ) {
-    $new =~ s/(\s*;)\s*/$1\n  /gs ;
-    $new =~ s/^(\s*)/$1\n  /gs ;
-    
-    $sub_html_eval =~ s/(\s+;)\s*/$1\n  /gs ;
-    $sub_html_eval =~ s/^(\s*)/$1\n  /gs ;
+  if ( $ALL_OO || $BUILD ) {
+    $new = format_nice_sub($new) ;
+
+    $sub_html_eval = format_nice_sub($sub_html_eval) if $sub_html_eval ;
   
     $class .= "{ package $name ;\n" ;
-    $class .= "    $extends\n" ;
+    $class .= "\n$FIRST_SUB_IDENT$extends\n" if $extends ;
     $class .= "$new\n" ;
     $class .= "\n$sub_html_eval\n" if $sub_html_eval ;
   }
@@ -341,6 +347,21 @@ sub build_class {
   $class .= "\n}\n" ;
   
   return( $class ) ;
+}
+
+###################
+# FORMAT_NICE_SUB #
+###################
+
+sub format_nice_sub {
+  my $sub = shift ;
+  if ( !$sub ) { return $sub ;}
+  $sub =~ s/({\s+)/$1\n$FIRST_SUB_IDENT  / ;
+  $sub =~ s/(\s*;)\s*/$1\n$FIRST_SUB_IDENT  /gs ;
+  $sub =~ s/^(\s*)/$1\n$FIRST_SUB_IDENT/gs ;
+  $sub =~ s/\s+$//gs ;
+  $sub =~ s/\n[ \t]*(})$/\n$FIRST_SUB_IDENT$1/ ;
+  return $sub ;
 }
 
 ##############
@@ -357,6 +378,11 @@ sub parse_subs {
     $init = $1 ;
     $sub = $2 ;
     $data = $3 ;
+    
+    if ( !$FIRST_SUB_IDENT ) {
+      $FIRST_SUB_IDENT = $init ;
+      $FIRST_SUB_IDENT =~ s/.*?([ \t]*)$/$1/s ;
+    }
     
     my @ret = extract_block($data) ;
     
@@ -395,7 +421,7 @@ sub build_sub {
     
   my $my_code = $SUB_OO . $my_args ;
   
-  if ( $ALL_OO ) {
+  if ( $ALL_OO || $BUILD ) {
     my ($n,$ident) = ( $body =~ /(\r\n?|\n)([ \t]+)/s );
     $my_code =~ s/(\s*;)\s*/$1$n$ident/gs ;
     $my_code =~ s/^(\s*)/$1$n$ident/gs ;
@@ -465,6 +491,92 @@ sub generate_args_code {
   return $my_args ;
 }
 
+###############
+# BUILD_HPLOO #
+###############
+
+sub build_hploo {
+  my ( $hploo_file , $pm_file ) = @_ ;
+  
+  my $file_data ;
+  {
+    open (my $fh,$hploo_file) ;
+    $file_data = join '' , <$fh> ;
+    close ($fh) ;
+  }
+  
+  my ($file_init,$file_splitter,$file_end) = ( $file_data =~ /(.*)(\n__END__\n)(.*?)$/s );
+  
+  my ($import_args) = ( $file_init =~ /(?:^|\n)[ \t]*use[ \t]+Class::HPLOO(?:(\W.*?);|;)/s );
+  
+  $file_init =~ s/(?:^|\n)[ \t]*use[ \t]+Class::HPLOO(?:\W.*?;|;)//s ;
+
+  $import_args = join ("", (eval($import_args))) ;
+  $import_args =~ s/\W/ /gs ;
+  $import_args =~ s/\s+/ /gs ;
+  
+  $file_init = "use Class::HPLOO qw(build $import_args);\n" . $file_init ;
+  
+  open (my $fh,">$pm_file") ;
+  print $fh $file_init ;
+  close ($fh) ;
+  
+  my ($path,$file) = ( $pm_file =~ /(?:(.*)[\\\/]|^)([^\\\/]+)$/s );
+  
+  {
+    unshift (@INC, $path) ;
+    
+    my $pack = $file ;
+    $pack =~ s/\.pm$//s ;
+
+    eval(" use $pack ") ;
+    
+    delete $INC{$pack} ;
+    shift (@INC) ;
+  }
+  
+  my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $year += 1900 ;
+  ++$mon ;
+  
+  $sec = "0$sec" if $sec < 10 ;
+  $min = "0$min" if $min < 10 ;
+  $hour = "0$hour" if $hour < 10 ;
+  $mday = "0$mday" if $mday < 10 ;
+  $mon = "0$mon" if $mon < 10 ;
+  
+  my $code = qq`#############################################################################
+## This file was generated automatically by Class::HPLOO/$Class::HPLOO::VERSION
+##
+## Original file:    $hploo_file
+## Generation date:  $year-$mon-$mday $hour:$min:$sec
+##
+## ** Do not change this file, use the original HPLOO source! **
+#############################################################################
+` . $BUILD ;
+
+  $BUILD = undef ;
+  
+  my $epod ;
+  eval(q` require ePod `);
+  if ( !$@ ) { $epod = new ePod( over_size => 4 ) ;}
+  
+  if ( $epod && $epod->VERSION >= 0.03 && $epod->is_epod($file_end) ) {
+    $file_end = $epod->epod2pod($file_end) ;
+    $file_end =~ s/^\n//s ;
+  }
+  
+  $code .= $file_splitter . $file_end ;
+  
+  $code =~ s/\r\n?/\n/gs ;
+  
+  open (my $fh,">$pm_file") ;
+  print $fh $code ;
+  close ($fh) ;
+  
+  return $code ;
+}
+
 #######
 # END #
 #######
@@ -476,7 +588,7 @@ __END__
 
 =head1 NAME
 
-Class::HPLOO - Easier way to declare classes on Perl, based in the popular style.
+Class::HPLOO - Easier way to declare classes on Perl, based in the popular class {...} style and ePod.
 
 =head1 DESCRIPTION
 
@@ -584,6 +696,18 @@ You can dump the generated code:
   use Class::HPLOO qw(dump nice) ;
 
 ** The I<nice> option just try to make a cleaner code.
+
+=head1 BUILD
+
+The script "build-hploo.pl" can be used to convert .hploo files .pm files.
+
+Soo, tou can write a Perl Module with Class::HPLOO and release it as a normal .pm
+file without need Class::HPLOO installed.
+
+If you have L<ePod> (0.03+) installed you can use ePod to write your documentation.
+For .hploo files the ePod need to be alwasy after __END__.
+
+Note that ePod accepts POD syntax too, soo you still can use normal POD for documentation.
 
 =head1 SEE ALSO
 

@@ -3,7 +3,9 @@ HPLOO.pm
 MANIFEST
 Makefile.PL
 README
+script/build-hploo.pl
 test.pl
 test/classtest.pm
 test/classtest2.pm
 test/foo.pm
+
