@@ -41,6 +41,7 @@ BEGIN { plan tests => 1 } ;
 
   eval { require "test/foo.pm" } ;
   ok(!$@) ;
+  print ">> $@\n" if $@ ;
 
   my $foo = new foo();
   $foo->{A} = 123 ;

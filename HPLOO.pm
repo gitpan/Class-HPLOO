@@ -18,9 +18,9 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 
-my (%HTML , %COMMENTS , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT) ;
+my (%HTML , %COMMENTS , $SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
 my (%CACHE , $LOADED) ;
 
@@ -88,11 +88,11 @@ if (!$LOADED) {
 sub import {
   my $class = shift ;
   
-  ($SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT) = () ;
+  ($SUB_OO , $DUMP , $ALL_OO , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) = () ;
 
   my $args = join(" ", @_) ;
   
-  if ( $args =~ /build/i) { $args =~ s/build//gsi ; $BUILD = 1 ;}
+  if ( $args =~ /build/i) { $args =~ s/(?:build|dump|nice)//gsi ; $BUILD = 1 ;}
   elsif    ( $args =~ /nice/i) { $args = "dump alloo nocleanarg" ;}
   
   if ( $args =~ /all[_\s]*oo/i) { $SUB_OO = $SUB_ALL_OO ; $ALL_OO = 1 ;}
@@ -161,19 +161,36 @@ sub filter_html_blocks {
   
   if ( $CACHE{$_} ) { $RET_CACHE = 1 ; return ;}
   
+  my $line_init ;
+  {
+    my ($c,@call) ;
+    while( ($call[0] =~ /^Filter::/ || $call[0] eq '') && $c <= 10 ) { @call = caller(++$c) ;}
+    $line_init = $call[2] ;
+  }
+  
   if ( $_ =~ /(.*)(?:\r\n?|\n)__END__(?:\r\n?|\n).*?$/s ) {
     $_ = $1 ;
   }
 
   %COMMENTS = () ;
   
-  my $data = $CACHE{_} = clean_comments("\n".$_) ;
+  my $set_init_line = "\n#line $line_init\n" if !$BUILD ;
+  my $data = $CACHE{_} = $set_init_line . clean_comments("\n".$_) ;
     
   %HTML = () ;
   
   $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ;
   
   $data =~ s/<%[ \t]*html?(\w+)[ \t]*>(?:(\(.*?\))|)/CLASS_HPLOO_HTML('$1',$2)/sgi ;
+  
+  if ( !$BUILD ) {
+    $data =~ s/([\r\n][ \t]*<%\s*html\w+[ \t]*(?:\(.*?\))?[ \t]*[^\r\n]*(?:\r\n|[\r\n]).*?(?:\r\n|[\r\n])?%>)((?:\r\n|[\r\n])?)/
+      my $blk = $1 ;
+      my $dt = substr($data , 0 , pos($data)) . $blk . $2 ;
+      my $ln = ($dt =~ tr~\n~~s) + $line_init ;
+      "$blk#line $ln\n";
+    /egsix ;
+  }
                                    
   $data =~ s/([\r\n])[ \t]*<%\s*html(\w+)[ \t]*(\(.*?\))?[ \t]*[^\r\n]*(?:\r\n|[\r\n])(.*?)(?:\r\n|[\r\n])?%>(?:\r\n|[\r\n])?/
     my $tag = "<?CLASS_HPLOO_HTML_$2?>" ;
@@ -213,11 +230,31 @@ sub CLASS_HPLOO {
   my $phx = -1 ;
   $data =~ s/\Q$;\E....\Q$;\E/"$;HPL_PH". ++$phx ."$;"/egs ;
   
-  my $syntax ;
+  my $syntax = parse_class($data) ;
+  $syntax .= "\n1;\n" if $syntax !~ /\s*1\s*;\s*$/ ;
+
+  $syntax =~ s/(<\?CLASS_HPLOO_HTML_\w+\?>)/$HTML{$1}{1}$HTML{$1}{2}$HTML{$1}{3}$HTML{$1}{4}/gs ;
+  $syntax =~ s/\Q$;\EHPL_PH(\d+)\Q$;\E/$ph[$1]/gs ;
   
+  %HTML = () ;
+
+  $_ = $SYNTAX = $syntax ;
+}
+
+###############
+# PARSE_CLASS #
+###############
+
+sub parse_class {
+  my $data = shift ;
+  
+  my $first_sub_ident = $FIRST_SUB_IDENT ;
+  $FIRST_SUB_IDENT = undef ;
+  
+  my $syntax ;
   my ( $init , $class ) ;
 
-  while( $data =~ /^(.*?\W|)(class\s+[\w\.:]+\s*(?:extends\s+[^\{\}]+)?)(\{.*)$/gs ) {
+  while( $data =~ /^(.*?\W|)(class\s+[\w\.:]+(?:\s+extends\s*[^\{\}]*)?)\s*(\{.*)$/gs ) {
     $init = $1 ;
     $class = $2 ;
     $data = $3 ;
@@ -228,6 +265,7 @@ sub CLASS_HPLOO {
       $class .= $ret[0] ;
       $data = $ret[1] ;
       $class = build_class($class) ;
+      $init =~ s/[ \t]+$//s ;
     }
     
     $syntax .= $init . $class ;
@@ -235,16 +273,9 @@ sub CLASS_HPLOO {
   
   $syntax .= $data ;
   
-  $syntax .= "\n1;\n" if $syntax !~ /\s*1\s*;\s*$/ ;
+  $FIRST_SUB_IDENT = $first_sub_ident ;
   
-
-
-  $syntax =~ s/(<\?CLASS_HPLOO_HTML_\w+\?>)/$HTML{$1}{1}$HTML{$1}{2}$HTML{$1}{3}$HTML{$1}{4}/gs ;
-  $syntax =~ s/\Q$;\EHPL_PH(\d+)\Q$;\E/$ph[$1]/gs ;
-  
-  %HTML = () ;
-
-  $_ = $SYNTAX = $syntax ;
+  return( $syntax ) ;
 }
 
 #################
@@ -296,8 +327,10 @@ sub build_class {
   my $code = shift ;
   my $class ;
   
-  my ($name,$extends,$body) = ( $code =~ /class\s+([\w\.:]+)\s*(?:extends\s+([\w\.:]+(?:\s*,\s*[\w\.:]+)*)\s*|){(.*)$/s );
+  my ($name,$extends,$body) = ( $code =~ /class\s+([\w\.:]+)(?:\s+extends\s+([\w\.:]+(?:\s*,\s*[\w\.:]+)*)\s*|\s+extends|)\s*{(.*)$/s );
   $body =~ s/}\s*$//s ;
+  
+  $name =~ s/^\./$PREV_CLASS_NAME\::/gs ;
   
   $name = package_name($name);
   
@@ -345,15 +378,23 @@ sub build_class {
     $sub_html_eval = format_nice_sub($sub_html_eval) if $sub_html_eval ;
   
     $class .= "{ package $name ;\n" ;
+    $class .= "\n${FIRST_SUB_IDENT}use strict qw(vars) ;\n" ;
     $class .= "\n$FIRST_SUB_IDENT$extends\n" if $extends ;
     $class .= "$new\n" ;
     $class .= "\n$sub_html_eval\n" if $sub_html_eval ;
   }
   else {
-    $class .= "{ package $name ;$extends my (%CLASS_HPLOO_HTML , \$this) ; $new$sub_html_eval\n" ;
+    $class .= "{ package $name ; use strict qw(vars) ;$extends my (%CLASS_HPLOO_HTML , \$this) ; $new$sub_html_eval\n" ;
+    $body =~ s/^(?:\r\n?|\n)//s ;
   }
 
-  $class .= $body ;
+   my $prev_class_name = $PREV_CLASS_NAME ;
+  $PREV_CLASS_NAME = $name ;
+  
+  $class .= parse_class($body) ;
+
+  $PREV_CLASS_NAME = $prev_class_name ;
+  
   $class .= "\n}\n" ;
   
   return( $class ) ;
@@ -699,6 +740,22 @@ You can use HTML blocks in the class like in HPL documents:
     %>
   
   }
+
+=head1 SUB CLASSES
+
+From version 0.04+ you can declare sub-classes:
+
+  class foo {
+    class subfoo { ... }
+  }
+
+You also can handle the base name of a class adding "." in the begin of the class name:
+
+  class foo {
+    class .in { ... }
+  }
+
+B<The class name I<.in> will be translated to I<foo::in>.>
 
 =head1 DUMP
 

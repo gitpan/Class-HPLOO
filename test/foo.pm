@@ -3,6 +3,7 @@ use Class::HPLOO ;#qw(nice) ;
 
 class foo {
 
+  vars ($global) ;
   $global = "123456789" ;
   
   sub test( $arg ) {
