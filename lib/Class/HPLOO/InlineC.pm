@@ -16,7 +16,7 @@ use strict qw(vars) ;
 
 use vars qw($VERSION @ISA) ;
 
-$VERSION = '0.1';
+$VERSION = '0.2';
 
 ##########
 # REGEXP #
@@ -161,7 +161,7 @@ sub apply_CPL {
     
     if ( $op =~ /^\s*=\s*(.*?)\s*;/s ) {
       my $fetch = fetch_attr($fetch_attr) ;
-      $syntax .= "sv_setsv_mg( $fetch , ". _val_to_sv($1) ." ) ;" ;
+      $syntax .= "sv_setsv_mg( $fetch , ". _val_to_sv(fetch_attr($1)) ." ) ;" ;
     }
     else {
       $syntax .= fetch_attr($fetch_attr) ;
