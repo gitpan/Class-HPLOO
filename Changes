@@ -1,6 +1,15 @@
 Revision history for Perl extension Class::HPLOO.
 
 
+0.10  2004-02-05
+      - Bug fix for "-s foo", due bug on Filter::Simple.
+      - Added recursivety for build-hploo script.
+
+
+0.09  2004-01-23
+      - Just some bug fixes.
+
+
 0.08  2004-01-17
       - Changed behavior of return 0 for object initializer.
         Now is reutnr UNDEF, where UNDEF is a constant.

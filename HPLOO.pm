@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.09';
+$VERSION = '0.10';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -44,7 +44,7 @@ if (!$LOADED) {
       my $this = bless({} , $class) ;
       my $undef = \'' ;
       sub UNDEF {$undef} ;
-      my $ret_this = $this->%CLASS%(@_) if defined &%CLASS% ;
+      my $ret_this = defined &%CLASS% ? $this->%CLASS%(@_) : undef ;
       $this = $ret_this if ( UNIVERSAL::isa($ret_this,$class) ) ;
       $this = undef if ( $ret_this == $undef ) ;
       return $this ;
@@ -174,12 +174,13 @@ sub filter_html_blocks {
 
   %CLASSES = %HTML = %COMMENTS = () ;
   
-  my $set_init_line = "\n#line $line_init\n" if !$BUILD ;
+  my $set_init_line = !$BUILD ? "\n#line $line_init\n" : undef ;
   my $data = $CACHE{_} = $set_init_line . clean_comments("\n".$_) ;
   
   $data =~ s/(\{\s*)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*\})/$1\_CLASS_HPLOO_FIXER_$2/gs ;  ## {s}
   $data =~ s/(\W)((?:q|qq|qr|qw|qx|tr|y|s|m)\s*=>)/$1\_CLASS_HPLOO_FIXER_$2/gs ;   ## s =>
   $data =~ s/([\$\@\%\*])((?:q|qq|qr|qw|qx|tr|y|s|m)(?:\W|\s+\S))/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## $q
+  $data =~ s/(-s)(\s+\S|[^\w\s])/$1\_CLASS_HPLOO_FIXER_$2/gs ; ## -s foo
   
   $data =~ s/<%[ \t]*html?(\w+)[ \t]*>(?:(\(.*?\))|)/CLASS_HPLOO_HTML('$1',$2)/sgi ;
   
@@ -378,7 +379,7 @@ sub build_class {
   
   {
     my $prev_class_name = $PREV_CLASS_NAME ;
-   $PREV_CLASS_NAME = $name ;
+    $PREV_CLASS_NAME = $name ;
 
     $body = parse_class($body , 1) ;
 
@@ -389,7 +390,7 @@ sub build_class {
   
   $body =~ s/^[ \t]*\n//gs ;
   
-  my $sub_html_eval = $SUB_HTML_EVAL if $ADD_HTML_EVAL ;
+  my $sub_html_eval = $ADD_HTML_EVAL ? $SUB_HTML_EVAL : undef ;
   
   my $local_vars ;
   $local_vars = '%CLASS_HPLOO_HTML' if $ADD_HTML_EVAL ;
