@@ -1,5 +1,9 @@
 Revision history for Perl extension Class::HPLOO.
 
+0.11  2004-02-08
+      - Added support for attributes with attr().
+      - Preparating for object persistence.
+
 
 0.10  2004-02-05
       - Bug fix for "-s foo", due bug on Filter::Simple.

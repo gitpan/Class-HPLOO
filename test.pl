@@ -62,4 +62,39 @@ BEGIN { plan tests => 1 } ;
   
 }
 #########################
+{
+
+  eval { require "test/attr.pm" } ;
+  ok(!$@) ;
+  print ">> $@\n" if $@ ;
+  
+  my $foo = new Foo ;
+  ok($foo);
+  
+  ok( $foo->set_name("mohh") ) ;
+  ok( $foo->get_name , 'mohh' ) ;
+  
+  ok( $foo->set_age(123) ) ;
+  ok( $foo->get_age , 123 ) ;
+  
+  ok( $foo->{size} = 456 ) ;
+  ok( $foo->{size} , '456.0' ) ;
+  ok( $foo->get_size , '456.0' ) ;
+  
+  ok( $foo->set_size(1.14) ) ;
+  ok( $foo->{size} , '1.14' ) ;
+  ok( $foo->get_size , '1.14' ) ;
+  
+  ok( $foo->set_list(qw(a b c)) ) ;
+  my @l = $foo->get_list ;
+  ok( join(" ",@l) , 'a b c' ) ;
+  ok( $foo->{list} , 3 ) ;
+  
+  ok( $foo->set_special(["wwwaaaaa","isssaaa"]) ) ;
+  @l = @{ $foo->get_special } ;
+  ok( join(" ", @l) , 'wa isa' ) ;
+  ok( join(" ", @{$foo->{special}}) , 'wa isa' ) ;
+
+}
+#########################
 

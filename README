@@ -1,5 +1,5 @@
-Class/HPLOO version 0.01
-========================
+Class::HPLOO
+============
 
 This is the implemantation of OO-Classes for HPL.
 This bring a easy way to create PM classes, but with HPL resources/style.
