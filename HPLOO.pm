@@ -18,7 +18,7 @@ use strict ;
 
 use vars qw($VERSION $SYNTAX) ;
 
-$VERSION = '0.13';
+$VERSION = '0.14';
 
 my (%HTML , %COMMENTS , %CLASSES , $SUB_OO , $DUMP , $ALL_OO , $NICE , $NO_CLEAN_ARGS , $ADD_HTML_EVAL , $DO_NOTHING , $BUILD , $RET_CACHE , $FIRST_SUB_IDENT , $PREV_CLASS_NAME) ;
 
@@ -631,10 +631,10 @@ sub clean_comments {
   my $data = shift ;
   
   if ( $DUMP || $BUILD ) {
-    $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#])(#+[^\r\n]*))/++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = (defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
+    $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#\$])(#+[^\r\n]*))/++$COMMENTS{i} ; $COMMENTS{ $COMMENTS{i} } = (defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "#_CLASS_HPLOO_CMT_$COMMENTS{i}#"/gse ;
   }
   else {
-    $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#])(#+[^\r\n]*))/ my $s = ' ' x length(defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "$s" /gse ;
+    $data =~ s/(?:([\r\n][ \t]*)(#+[^\r\n]*)|([^\r\n\#\$])(#+[^\r\n]*))/ my $s = ' ' x length(defined $2 ? $2 : $4) ; (defined $1 ? $1 : $3) . "$s" /gse ;
   }
 
   return $data ;
@@ -826,7 +826,7 @@ sub parse_subs {
   my $syntax ;
   
   my ( $init , $sub ) ;
-
+  
   while( $data =~ /^(.*?\W|)(sub\s+[\w\.:]+\s*(?:\(.*?\)|)?)\s*(\{.*)$/gs ) {
     $init = $1 ;
     $sub = $2 ;
